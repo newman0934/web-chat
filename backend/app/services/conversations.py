@@ -1,54 +1,126 @@
 """對話相關共用邏輯，REST router 與 WebSocket 端點都依賴這裡。
 
-核心是「兩人 → 唯一一筆對話」：用 order_pair 把兩個 user_id 排序後存，
-搭配 DB 的 UNIQUE(user_a_id, user_b_id) 保證不會產生重複對話。
+統一模型：direct（2 成員）與 group（N 成員）共用 Conversation/ConversationMember。
+direct 用正規化的 direct_key 保證同兩人唯一。
 """
 
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation
+from app.models import Conversation, ConversationMember, Message, MessageRead
 
 
-def order_pair(a: uuid.UUID, b: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
-    """規範兩個 user_id 的排序（小的當 user_a），避免重複對話。"""
-    return (a, b) if str(a) < str(b) else (b, a)
+def direct_key(a: uuid.UUID, b: uuid.UUID) -> str:
+    """兩個 user_id 排序後組成穩定字串，作為 direct 對話唯一鍵。"""
+    x, y = sorted([str(a), str(b)])
+    return f"{x}:{y}"
 
 
-async def get_or_create_conversation(
-    db: AsyncSession, user1: uuid.UUID, user2: uuid.UUID
-) -> Conversation:
-    a, b = order_pair(user1, user2)
-    result = await db.execute(
-        select(Conversation).where(
-            Conversation.user_a_id == a, Conversation.user_b_id == b
+async def get_member_ids(db: AsyncSession, conversation_id: uuid.UUID) -> list[uuid.UUID]:
+    rows = await db.execute(
+        select(ConversationMember.user_id).where(
+            ConversationMember.conversation_id == conversation_id
         )
     )
-    conv = result.scalar_one_or_none()
-    if conv is None:
-        conv = Conversation(user_a_id=a, user_b_id=b)
-        db.add(conv)
-        await db.flush()
+    return list(rows.scalars().all())
+
+
+async def get_other_member_ids(
+    db: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID
+) -> list[uuid.UUID]:
+    return [uid for uid in await get_member_ids(db, conversation_id) if uid != user_id]
+
+
+async def get_or_create_direct_conversation(
+    db: AsyncSession, u1: uuid.UUID, u2: uuid.UUID
+) -> Conversation:
+    key = direct_key(u1, u2)
+    existing = await db.execute(
+        select(Conversation).where(Conversation.direct_key == key)
+    )
+    conv = existing.scalar_one_or_none()
+    if conv is not None:
+        return conv
+    conv = Conversation(type="direct", direct_key=key)
+    db.add(conv)
+    await db.flush()
+    db.add_all([
+        ConversationMember(conversation_id=conv.id, user_id=u1),
+        ConversationMember(conversation_id=conv.id, user_id=u2),
+    ])
+    await db.flush()
     return conv
 
 
-async def get_conversation_for_user(
+async def create_group_conversation(
+    db: AsyncSession, creator_id: uuid.UUID, name: str, member_ids: list[uuid.UUID]
+) -> Conversation:
+    conv = Conversation(type="group", name=name, creator_id=creator_id)
+    db.add(conv)
+    await db.flush()
+    # 建立者 + 受邀成員（去重）
+    all_ids = {creator_id, *member_ids}
+    db.add_all([
+        ConversationMember(conversation_id=conv.id, user_id=uid) for uid in all_ids
+    ])
+    await db.flush()
+    return conv
+
+
+async def get_conversation_for_member(
     db: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID
 ) -> Conversation | None:
-    """取得對話，且確認 user_id 是其中一方；否則回 None。"""
+    """取得對話，且確認 user 是成員；否則 None。"""
     result = await db.execute(
-        select(Conversation).where(
+        select(Conversation)
+        .join(ConversationMember, ConversationMember.conversation_id == Conversation.id)
+        .where(
             Conversation.id == conversation_id,
-            or_(
-                Conversation.user_a_id == user_id,
-                Conversation.user_b_id == user_id,
-            ),
+            ConversationMember.user_id == user_id,
         )
     )
     return result.scalar_one_or_none()
 
 
-def other_user_id(conv: Conversation, user_id: uuid.UUID) -> uuid.UUID:
-    return conv.user_b_id if conv.user_a_id == user_id else conv.user_a_id
+async def read_count(db: AsyncSession, message_id: uuid.UUID) -> int:
+    """讀過此則的人數（MessageRead 不含寄件人，因 mark_read 只標記非自己訊息）。"""
+    result = await db.execute(
+        select(func.count()).select_from(MessageRead).where(
+            MessageRead.message_id == message_id
+        )
+    )
+    return result.scalar_one()
+
+
+async def unread_count(
+    db: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID
+) -> int:
+    read_subq = select(MessageRead.message_id).where(MessageRead.user_id == user_id)
+    result = await db.execute(
+        select(func.count()).select_from(Message).where(
+            Message.conversation_id == conversation_id,
+            Message.sender_id != user_id,
+            not_(Message.id.in_(read_subq)),
+        )
+    )
+    return result.scalar_one()
+
+
+async def mark_read(
+    db: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """把此對話中 user 尚未讀、且非自己送出的訊息標記已讀，回傳新標記的 message_ids。"""
+    read_subq = select(MessageRead.message_id).where(MessageRead.user_id == user_id)
+    rows = await db.execute(
+        select(Message.id).where(
+            Message.conversation_id == conversation_id,
+            Message.sender_id != user_id,
+            not_(Message.id.in_(read_subq)),
+        )
+    )
+    ids = list(rows.scalars().all())
+    db.add_all([MessageRead(message_id=mid, user_id=user_id) for mid in ids])
+    await db.flush()
+    return ids
