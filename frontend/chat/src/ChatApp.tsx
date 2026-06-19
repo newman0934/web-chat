@@ -4,13 +4,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChatAppProps, Conversation, ServerWsMessage } from '../../contracts';
+import type { ChatAppProps, Contact, Conversation, ServerWsMessage } from '../../contracts';
 import { ApiClient, ApiError, UnauthorizedError } from './api';
 import { Sidebar } from './components/Sidebar';
 import { Thread } from './components/Thread';
 import {
   addIncoming,
   addOptimistic,
+  applyReadReceipt,
   fromHistory,
   makeOptimistic,
   markFailed,
@@ -39,6 +40,7 @@ export default function ChatApp({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
   const [hasMore, setHasMore] = useState<Record<string, boolean>>({});
+  const [contacts, setContacts] = useState<Contact[]>([]);
 
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
@@ -54,7 +56,8 @@ export default function ChatApp({
 
   useEffect(() => {
     void loadConversations();
-  }, [loadConversations]);
+    void api.listContacts().then(setContacts).catch(() => {});
+  }, [loadConversations, api]);
 
   // ---- WebSocket ----
   /** 分派 WebSocket 推播：ACK 對齊、新訊息、已讀、送訊失敗。 */
@@ -82,18 +85,12 @@ export default function ChatApp({
           break;
         }
         case 'read': {
-          // 對方已讀我方訊息：把該對話我送出的訊息標記已讀。
           setMessages((prev) => {
             const list = prev[msg.conversation_id];
             if (!list) return prev;
-            const now = new Date().toISOString();
             return {
               ...prev,
-              [msg.conversation_id]: list.map((m) =>
-                m.sender_id === currentUser.id && !m.read_at
-                  ? { ...m, read_at: now }
-                  : m,
-              ),
+              [msg.conversation_id]: applyReadReceipt(list, msg.message_ids),
             };
           });
           break;
@@ -116,7 +113,7 @@ export default function ChatApp({
           break;
       }
     },
-    [currentUser.id, loadConversations],
+    [loadConversations],
   );
 
   const socket = useChatSocket(wsBaseUrl, token, {
@@ -261,7 +258,31 @@ export default function ChatApp({
     [api, loadConversations, onLogout],
   );
 
+  /** 建立群組對話；回傳 null 表示成功，否則為錯誤訊息字串。 */
+  const createGroup = useCallback(
+    async (name: string, memberIds: string[]): Promise<string | null> => {
+      try {
+        const conv = await api.createGroup(name, memberIds);
+        await loadConversations();
+        setActiveId(conv.id);
+        return null;
+      } catch (err) {
+        if (err instanceof UnauthorizedError) { onLogout(); return '憑證失效'; }
+        if (err instanceof ApiError) return err.message;
+        return '建立群組失敗';
+      }
+    },
+    [api, loadConversations, onLogout],
+  );
+
   const activeConv = conversations.find((c) => c.id === activeId) ?? null;
+  const isGroup = activeConv?.type === 'group';
+  const memberNames = Object.fromEntries(
+    (activeConv?.members ?? []).map((m) => [m.id, m.display_name]),
+  );
+  const title = activeConv
+    ? (activeConv.type === 'group' ? activeConv.name ?? '群組' : activeConv.other_user?.display_name ?? '')
+    : '';
 
   return (
     <div className="flex h-screen">
@@ -270,13 +291,17 @@ export default function ChatApp({
         activeId={activeId}
         currentUserName={currentUser.display_name}
         socketStatus={socket.status}
+        contacts={contacts}
         onSelect={selectConversation}
         onAddContact={addContact}
+        onCreateGroup={createGroup}
         onLogout={onLogout}
       />
       {activeId && activeConv ? (
         <Thread
-          title={activeConv.other_user.display_name}
+          title={title}
+          isGroup={isGroup}
+          memberNames={memberNames}
           messages={messages[activeId] ?? []}
           currentUserId={currentUser.id}
           canLoadMore={hasMore[activeId] ?? false}
