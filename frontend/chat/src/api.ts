@@ -1,7 +1,7 @@
 // chat remote 的 REST 客戶端：包裝 fetch，統一帶上 JWT 與錯誤處理。
 // 即時訊息走 WebSocket（見 useChatSocket.ts）；這裡只負責「非即時」的讀取與加好友。
 
-import type { Contact, Conversation, Message } from '../../contracts';
+import type { Contact, Conversation, GroupCreateRequest, Message } from '../../contracts';
 
 export class ApiClient {
   /** @param baseUrl REST API 根路徑 @param token JWT，附在 Authorization header */
@@ -47,6 +47,15 @@ export class ApiClient {
   /** 取得對話清單（含對方資訊、最後訊息、未讀數）。 */
   listConversations() {
     return this.req<Conversation[]>('/conversations');
+  }
+
+  /** 建立群組對話，並回傳新建的 Conversation。 */
+  createGroup(name: string, memberUserIds: string[]) {
+    const body: GroupCreateRequest = { name, member_user_ids: memberUserIds };
+    return this.req<Conversation>('/conversations/groups', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   }
 
   /** 撈歷史訊息。before 為游標（取更早的訊息），limit 為每頁筆數。 */
