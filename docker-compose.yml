@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: chatweb-db
+    environment:
+      POSTGRES_USER: chatweb
+      POSTGRES_PASSWORD: chatweb
+      POSTGRES_DB: chatweb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatweb -d chatweb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: chatweb-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://chatweb:chatweb@db:5432/chatweb
+      JWT_SECRET: dev-secret-change-me
+      CORS_ORIGINS: "http://localhost:5000,http://localhost:5001,http://localhost:5002"
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  pgdata:
