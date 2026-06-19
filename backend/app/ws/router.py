@@ -9,24 +9,33 @@
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import db as db_module
 from app.auth.security import decode_access_token
 from app.models import Message, User
-from app.schemas import MessageOut
-from app.services.conversations import get_conversation_for_user, other_user_id
+from app.services.conversations import (
+    get_conversation_for_member,
+    get_other_member_ids,
+    mark_read,
+)
 from app.ws.manager import manager
 
 router = APIRouter()
 
 
-def _serialize_message(msg: Message) -> dict:
-    return MessageOut.model_validate(msg).model_dump(mode="json")
+def _serialize_message(msg: Message, read_count: int = 0) -> dict:
+    return {
+        "id": str(msg.id),
+        "conversation_id": str(msg.conversation_id),
+        "sender_id": str(msg.sender_id),
+        "content": msg.content,
+        "created_at": msg.created_at.astimezone(timezone.utc).isoformat(),
+        "read_count": read_count,
+    }
 
 
 async def _resolve_user(db: AsyncSession, token: str | None) -> User | None:
@@ -95,16 +104,13 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
         return
 
     async with db_module.SessionLocal() as db:
-        conv = await get_conversation_for_user(db, conv_id, user.id)
+        conv = await get_conversation_for_member(db, conv_id, user.id)
         if conv is None:
             await websocket.send_json(
                 {"type": "error", "reason": "forbidden", "temp_id": temp_id}
             )
             return
-
-        message = Message(
-            conversation_id=conv_id, sender_id=user.id, content=content
-        )
+        message = Message(conversation_id=conv_id, sender_id=user.id, content=content)
         db.add(message)
         try:
             await db.commit()
@@ -115,15 +121,13 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
                 {"type": "error", "reason": "db_error", "temp_id": temp_id}
             )
             return
-
         payload = _serialize_message(message)
-        recipient_id = other_user_id(conv, user.id)
+        recipients = await get_other_member_ids(db, conv_id, user.id)
 
-    # ACK 給寄件人（含 temp_id 供前端對齊樂觀訊息）
     await websocket.send_json({"type": "ack", "temp_id": temp_id, "message": payload})
-    # 推給收件人（若在線）
-    if manager.is_online(recipient_id):
-        await manager.send_to_user(recipient_id, {"type": "message", "message": payload})
+    for rid in recipients:
+        if manager.is_online(rid):
+            await manager.send_to_user(rid, {"type": "message", "message": payload})
 
 
 async def _handle_read(websocket: WebSocket, user: User, data: dict) -> None:
@@ -135,28 +139,25 @@ async def _handle_read(websocket: WebSocket, user: User, data: dict) -> None:
         return
 
     async with db_module.SessionLocal() as db:
-        conv = await get_conversation_for_user(db, conv_id, user.id)
+        conv = await get_conversation_for_member(db, conv_id, user.id)
         if conv is None:
             await websocket.send_json({"type": "error", "reason": "forbidden"})
             return
-        await db.execute(
-            update(Message)
-            .where(
-                Message.conversation_id == conv_id,
-                Message.sender_id != user.id,
-                Message.read_at.is_(None),
-            )
-            .values(read_at=datetime.now(timezone.utc))
-        )
+        marked = await mark_read(db, conv_id, user.id)
         await db.commit()
-        recipient_id = other_user_id(conv, user.id)
+        recipients = await get_other_member_ids(db, conv_id, user.id)
 
-    # 通知對方「你的訊息已被讀」
-    if manager.is_online(recipient_id):
-        await manager.send_to_user(
-            recipient_id,
-            {"type": "read", "conversation_id": str(conv_id), "reader_id": str(user.id)},
-        )
+    if not marked:
+        return
+    message_ids = [str(mid) for mid in marked]
+    for rid in recipients:
+        if manager.is_online(rid):
+            await manager.send_to_user(rid, {
+                "type": "read",
+                "conversation_id": str(conv_id),
+                "reader_id": str(user.id),
+                "message_ids": message_ids,
+            })
 
 
 async def _handle_typing(user: User, data: dict) -> None:
@@ -166,12 +167,13 @@ async def _handle_typing(user: User, data: dict) -> None:
     except (ValueError, TypeError):
         return
     async with db_module.SessionLocal() as db:
-        conv = await get_conversation_for_user(db, conv_id, user.id)
+        conv = await get_conversation_for_member(db, conv_id, user.id)
         if conv is None:
             return
-        recipient_id = other_user_id(conv, user.id)
-    if manager.is_online(recipient_id):
-        await manager.send_to_user(
-            recipient_id,
-            {"type": "typing", "conversation_id": str(conv_id), "user_id": str(user.id)},
-        )
+        recipients = await get_other_member_ids(db, conv_id, user.id)
+    for rid in recipients:
+        if manager.is_online(rid):
+            await manager.send_to_user(
+                rid,
+                {"type": "typing", "conversation_id": str(conv_id), "user_id": str(user.id)},
+            )
