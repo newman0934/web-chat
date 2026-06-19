@@ -7,6 +7,8 @@ import type { ChatMessage } from '../messageStore';
 
 interface ThreadProps {
   title: string;
+  isGroup: boolean;
+  memberNames: Record<string, string>;
   messages: ChatMessage[];
   currentUserId: string;
   canLoadMore: boolean;
@@ -18,6 +20,8 @@ interface ThreadProps {
 /** 右側對話視窗：訊息列表、載入更多、輸入框與送出。 */
 export function Thread({
   title,
+  isGroup,
+  memberNames,
   messages,
   currentUserId,
   canLoadMore,
@@ -64,6 +68,8 @@ export function Thread({
             key={m.temp_id ?? m.id}
             message={m}
             mine={m.sender_id === currentUserId}
+            isGroup={isGroup}
+            senderName={memberNames[m.sender_id]}
             onRetry={onRetry}
           />
         ))}
@@ -93,32 +99,27 @@ export function Thread({
 }
 
 /** 單則訊息泡泡：區分我方/對方，我方顯示傳送狀態與重試。 */
-function MessageBubble({
-  message,
-  mine,
-  onRetry,
-}: {
-  message: ChatMessage;
-  mine: boolean;
-  onRetry: (tempId: string) => void;
+function MessageBubble({ message, mine, isGroup, senderName, onRetry }: {
+  message: ChatMessage; mine: boolean; isGroup: boolean;
+  senderName?: string; onRetry: (tempId: string) => void;
 }) {
   return (
     <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-          mine ? 'bg-indigo-600 text-white' : 'bg-white text-slate-800 shadow'
-        }`}
-      >
+      <div className={`max-w-[70%] rounded-2xl px-4 py-2 ${mine ? 'bg-indigo-600 text-white' : 'bg-white text-slate-800 shadow'}`}>
+        {isGroup && !mine && senderName && (
+          <p className="mb-0.5 text-xs font-medium text-indigo-500">{senderName}</p>
+        )}
         <p className="whitespace-pre-wrap break-words">{message.content}</p>
         {mine && (
           <p className="mt-1 text-right text-xs opacity-80">
             {message.status === 'sending' && '傳送中…'}
-            {message.status === 'sent' && (message.read_at ? '已讀' : '已送出')}
+            {message.status === 'sent' && (
+              isGroup
+                ? (message.read_count > 0 ? `已讀 ${message.read_count}` : '已送出')
+                : (message.read_count > 0 ? '已讀' : '已送出')
+            )}
             {message.status === 'failed' && (
-              <button
-                onClick={() => message.temp_id && onRetry(message.temp_id)}
-                className="underline"
-              >
+              <button onClick={() => message.temp_id && onRetry(message.temp_id)} className="underline">
                 未送出，點擊重試
               </button>
             )}

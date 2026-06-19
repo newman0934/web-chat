@@ -11,7 +11,7 @@ function msg(over: Partial<ChatMessage>): ChatMessage {
     sender_id: 'me',
     content: 'hello',
     created_at: '2026-06-19T00:00:00Z',
-    read_at: null,
+    read_count: 0,
     status: 'sent',
     ...over,
   };
@@ -24,6 +24,8 @@ describe('Thread', () => {
         title="Bob"
         messages={[msg({ content: '哈囉' })]}
         currentUserId="me"
+        isGroup={false}
+        memberNames={{}}
         canLoadMore={false}
         onLoadMore={vi.fn()}
         onSend={vi.fn()}
@@ -40,6 +42,8 @@ describe('Thread', () => {
         title="Bob"
         messages={[msg({ status: 'sending' })]}
         currentUserId="me"
+        isGroup={false}
+        memberNames={{}}
         canLoadMore={false}
         onLoadMore={vi.fn()}
         onSend={vi.fn()}
@@ -56,6 +60,8 @@ describe('Thread', () => {
         title="Bob"
         messages={[msg({ status: 'failed', temp_id: 'tmp-9' })]}
         currentUserId="me"
+        isGroup={false}
+        memberNames={{}}
         canLoadMore={false}
         onLoadMore={vi.fn()}
         onSend={vi.fn()}
@@ -73,6 +79,8 @@ describe('Thread', () => {
         title="Bob"
         messages={[]}
         currentUserId="me"
+        isGroup={false}
+        memberNames={{}}
         canLoadMore={false}
         onLoadMore={vi.fn()}
         onSend={onSend}
@@ -84,5 +92,21 @@ describe('Thread', () => {
     fireEvent.click(screen.getByRole('button', { name: '送出' }));
     expect(onSend).toHaveBeenCalledWith('在嗎');
     expect(input.value).toBe('');
+  });
+
+  it('群組顯示寄件人名字與已讀 N', () => {
+    render(
+      <Thread
+        title="家族群" isGroup memberNames={{ u2: 'Bob' }}
+        messages={[
+          msg({ id: 'm1', sender_id: 'u2', content: '嗨' }),               // 別人 → 顯示名字
+          msg({ id: 'm2', sender_id: 'me', content: '哈', read_count: 2 }), // 自己 → 已讀 2
+        ]}
+        currentUserId="me" canLoadMore={false}
+        onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Bob')).toBeInTheDocument();
+    expect(screen.getByText('已讀 2')).toBeInTheDocument();
   });
 });
