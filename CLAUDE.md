@@ -86,6 +86,29 @@ cd frontend/shell && npm run dev                       # :5000
 - 後端測試（`backend/tests/conftest.py`）用**檔案型 SQLite + `NullPool`**，不是 in-memory。原因：WS 測試用同步的 starlette `TestClient`（自己的 event loop），與 async httpx client（pytest-asyncio loop）需共享資料；NullPool 讓每個 session 在自己的 loop 取得新連線。改測試基礎建設時別退回 in-memory + StaticPool，會踩跨-loop 錯誤。
 - 前端純邏輯（樂觀更新）抽成 `chat/src/messageStore.ts` 的純函式，單獨測試，與 React 元件解耦。
 
+## Commit 訊息規範
+
+所有 commit 標題一律用以下格式：
+
+```
+[feature][type][scope] description
+```
+
+- **feature**：所屬功能 / epic，如 `group-chat`、`mvp`、`auth`。
+- **type**：`feat` | `fix` | `docs` | `test` | `refactor` | `chore`。
+- **scope**：受影響範圍，如 `backend`、`frontend`、`ws`、`db`、`shell`、`chat`、`contracts`。
+- **description**：簡短祈使句描述（可中文）。
+
+範例：
+
+```
+[group-chat][feat][backend] 新增 ConversationMember 與 MessageRead 模型
+[group-chat][test][frontend] 補 messageStore read 收據測試
+[mvp][fix][ws] 修正斷線重連未清除計時器
+```
+
+commit 內文結尾仍保留：`Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`。
+
 ## 注意事項
 
 - 全域開發規則在 `~/.claude/CLAUDE.md`（寫碼前讀 PRD、`/dev-flow` 流程等），疊加在本檔之上。
