@@ -65,6 +65,9 @@ async def test_messages_pagination(
     assert page.status_code == 200
     msgs = page.json()
     assert [m["content"] for m in msgs] == ["m3", "m4"]  # 最新兩則，由舊到新
+    # 新格式：有 read_count 欄位，沒有 read_at
+    assert "read_count" in msgs[0]
+    assert "read_at" not in msgs[0]
 
     oldest = msgs[0]["created_at"]
     prev = await client.get(

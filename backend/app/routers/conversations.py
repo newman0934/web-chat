@@ -1,19 +1,60 @@
-"""對話清單與歷史訊息（分頁）。"""
+"""對話清單、建群與歷史訊息（分頁）。"""
 
 import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
 from app.db import get_db
-from app.models import Conversation, Message, User
-from app.schemas import ConversationOut, MessageOut, UserOut
-from app.services.conversations import get_conversation_for_user, other_user_id
+from app.models import Contact, Conversation, ConversationMember, Message, User
+from app.schemas import ConversationOut, GroupCreateRequest, MessageOut, UserOut
+from app.services.conversations import (
+    create_group_conversation,
+    get_conversation_for_member,
+    get_member_ids,
+    read_count,
+    unread_count,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+
+async def _build_conversation_out(
+    db: AsyncSession, conv: Conversation, me: User
+) -> ConversationOut:
+    member_ids = await get_member_ids(db, conv.id)
+    members = [await db.get(User, uid) for uid in member_ids]
+    other = None
+    if conv.type == "direct":
+        other = next((u for u in members if u.id != me.id), None)
+
+    last_res = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conv.id)
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    last = last_res.scalar_one_or_none()
+    last_out = None
+    if last is not None:
+        last_out = MessageOut(
+            id=last.id, conversation_id=last.conversation_id, sender_id=last.sender_id,
+            content=last.content, created_at=last.created_at,
+            read_count=await read_count(db, last.id),
+        )
+
+    return ConversationOut(
+        id=conv.id,
+        type=conv.type,
+        name=conv.name,
+        other_user=UserOut.model_validate(other) if other else None,
+        members=[UserOut.model_validate(u) for u in members],
+        last_message=last_out,
+        unread_count=await unread_count(db, conv.id, me.id),
+    )
 
 
 @router.get("", response_model=list[ConversationOut])
@@ -21,62 +62,41 @@ async def list_conversations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # 我參與的對話 = 我是 user_a 或 user_b 的所有 Conversation。
-    result = await db.execute(
-        select(Conversation).where(
-            or_(
-                Conversation.user_a_id == current_user.id,
-                Conversation.user_b_id == current_user.id,
-            )
-        )
+    rows = await db.execute(
+        select(Conversation)
+        .join(ConversationMember, ConversationMember.conversation_id == Conversation.id)
+        .where(ConversationMember.user_id == current_user.id)
     )
-    conversations = result.scalars().all()
-
-    # 逐筆組裝清單項目：對方資訊 + 最後一則訊息 + 未讀數。
-    # 註：N+1 查詢，對 MVP 的好友量級可接受；量大時可改為聚合查詢。
-    out: list[ConversationOut] = []
-    for conv in conversations:
-        other_id = other_user_id(conv, current_user.id)
-        other = await db.get(User, other_id)
-
-        # 最後一則訊息（時間最新）作為清單預覽。
-        last_msg_res = await db.execute(
-            select(Message)
-            .where(Message.conversation_id == conv.id)
-            .order_by(Message.created_at.desc())
-            .limit(1)
-        )
-        last_msg = last_msg_res.scalar_one_or_none()
-
-        # 未讀 = 對方送來、且尚未標記 read_at 的訊息數。
-        unread_res = await db.execute(
-            select(func.count())
-            .select_from(Message)
-            .where(
-                Message.conversation_id == conv.id,
-                Message.sender_id != current_user.id,
-                Message.read_at.is_(None),
-            )
-        )
-        unread = unread_res.scalar_one()
-
-        out.append(
-            ConversationOut(
-                id=conv.id,
-                other_user=UserOut.model_validate(other),
-                last_message=(
-                    MessageOut.model_validate(last_msg) if last_msg else None
-                ),
-                unread_count=unread,
-            )
-        )
-
-    # 依最後訊息時間排序（新的在前）；沒訊息的排後面
+    conversations = rows.scalars().all()
+    out = [await _build_conversation_out(db, c, current_user) for c in conversations]
     out.sort(
         key=lambda c: c.last_message.created_at if c.last_message else datetime.min,
         reverse=True,
     )
     return out
+
+
+@router.post("/groups", response_model=ConversationOut, status_code=status.HTTP_201_CREATED)
+async def create_group(
+    payload: GroupCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    member_ids = [uid for uid in dict.fromkeys(payload.member_user_ids) if uid != current_user.id]
+    if not member_ids:
+        raise HTTPException(status_code=400, detail="群組至少要有一位其他成員")
+    # 每位成員都必須是好友
+    friend_rows = await db.execute(
+        select(Contact.contact_user_id).where(Contact.user_id == current_user.id)
+    )
+    friend_ids = set(friend_rows.scalars().all())
+    if any(uid not in friend_ids for uid in member_ids):
+        raise HTTPException(status_code=400, detail="只能把好友加入群組")
+
+    conv = await create_group_conversation(db, current_user.id, payload.name, member_ids)
+    await db.commit()
+    await db.refresh(conv)
+    return await _build_conversation_out(db, conv, current_user)
 
 
 @router.get("/{conversation_id}/messages", response_model=list[MessageOut])
@@ -87,20 +107,22 @@ async def list_messages(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # 確認此對話存在且 current_user 是其中一方，否則 404（不洩漏對話存在與否）。
-    conv = await get_conversation_for_user(db, conversation_id, current_user.id)
+    conv = await get_conversation_for_member(db, conversation_id, current_user.id)
     if conv is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="查無此對話或無權限"
-        )
+        raise HTTPException(status_code=404, detail="查無此對話或無權限")
 
-    # 游標式分頁：撈 before 之前的最新 limit 筆（往回翻舊訊息）。
     stmt = select(Message).where(Message.conversation_id == conversation_id)
     if before is not None:
         stmt = stmt.where(Message.created_at < before)
     stmt = stmt.order_by(Message.created_at.desc()).limit(limit)
-
     result = await db.execute(stmt)
     messages = list(result.scalars().all())
-    messages.reverse()  # DB 取的是新→舊，回傳前翻成舊→新方便前端直接 append 顯示
-    return messages
+    messages.reverse()
+    return [
+        MessageOut(
+            id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
+            content=m.content, created_at=m.created_at,
+            read_count=await read_count(db, m.id),
+        )
+        for m in messages
+    ]

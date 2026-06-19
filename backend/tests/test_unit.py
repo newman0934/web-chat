@@ -6,7 +6,7 @@ from app.auth.security import (
     hash_password,
     verify_password,
 )
-from app.services.conversations import order_pair
+from app.services.conversations import direct_key
 
 
 def test_password_hash_roundtrip():
@@ -26,9 +26,11 @@ def test_jwt_invalid_returns_none():
     assert decode_access_token("not.a.jwt") is None
 
 
-def test_order_pair_is_stable():
+def test_direct_key_is_stable():
     a = uuid.uuid4()
     b = uuid.uuid4()
-    assert order_pair(a, b) == order_pair(b, a)
-    lo, hi = order_pair(a, b)
-    assert str(lo) < str(hi)
+    assert direct_key(a, b) == direct_key(b, a)
+    key = direct_key(a, b)
+    parts = key.split(":")
+    assert len(parts) == 2
+    assert parts[0] < parts[1]

@@ -8,7 +8,7 @@ from app.auth.deps import get_current_user
 from app.db import get_db
 from app.models import Contact, User
 from app.schemas import AddContactRequest, ContactOut
-from app.services.conversations import get_or_create_conversation
+from app.services.conversations import get_or_create_direct_conversation
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
@@ -30,7 +30,7 @@ async def list_contacts(
     out: list[ContactOut] = []
     for other in others:
         # 一併帶上對話 id，前端點好友即可直接進對話（不存在就建立）。
-        conv = await get_or_create_conversation(db, current_user.id, other.id)
+        conv = await get_or_create_direct_conversation(db, current_user.id, other.id)
         out.append(
             ContactOut(
                 user_id=other.id,
@@ -77,7 +77,7 @@ async def add_contact(
     # 雙向好友關係
     db.add(Contact(user_id=current_user.id, contact_user_id=other.id))
     db.add(Contact(user_id=other.id, contact_user_id=current_user.id))
-    conv = await get_or_create_conversation(db, current_user.id, other.id)
+    conv = await get_or_create_direct_conversation(db, current_user.id, other.id)
     await db.commit()
 
     return ContactOut(
