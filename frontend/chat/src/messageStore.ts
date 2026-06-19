@@ -25,7 +25,7 @@ export function makeOptimistic(
     sender_id: senderId,
     content,
     created_at: new Date().toISOString(),
-    read_at: null,
+    read_count: 0,
     temp_id: tempId,
     status: 'sending',
   };
@@ -85,4 +85,15 @@ export function prependHistory(
 /** 初始化歷史訊息（由舊到新）。 */
 export function fromHistory(history: Message[]): ChatMessage[] {
   return history.map((m) => ({ ...m, status: 'sent' as const }));
+}
+
+/** 收到 read 事件：把被讀到的訊息 read_count + 1（用於「已讀 N」/「已讀」）。 */
+export function applyReadReceipt(
+  list: ChatMessage[],
+  messageIds: string[],
+): ChatMessage[] {
+  const ids = new Set(messageIds);
+  return list.map((m) =>
+    ids.has(m.id) ? { ...m, read_count: m.read_count + 1 } : m,
+  );
 }

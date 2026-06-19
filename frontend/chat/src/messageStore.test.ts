@@ -4,6 +4,7 @@ import type { Message } from '../../contracts';
 import {
   addIncoming,
   addOptimistic,
+  applyReadReceipt,
   fromHistory,
   makeOptimistic,
   markFailed,
@@ -18,7 +19,7 @@ function realMessage(id: string, content: string): Message {
     sender_id: 'me',
     content,
     created_at: '2026-06-19T00:00:00Z',
-    read_at: null,
+    read_count: 0,
   };
 }
 
@@ -67,5 +68,12 @@ describe('messageStore 樂觀更新', () => {
       realMessage('b', 'second'),
     ]);
     expect(merged.map((m) => m.id)).toEqual(['a', 'b']);
+  });
+
+  it('applyReadReceipt 對指定訊息 read_count +1', () => {
+    const list = fromHistory([realMessage('m1', 'a'), realMessage('m2', 'b')]);
+    const next = applyReadReceipt(list, ['m1']);
+    expect(next.find((m) => m.id === 'm1')!.read_count).toBe(1);
+    expect(next.find((m) => m.id === 'm2')!.read_count).toBe(0);
   });
 });

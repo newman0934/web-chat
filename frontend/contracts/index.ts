@@ -42,14 +42,22 @@ export interface Message {
   sender_id: string;
   content: string;
   created_at: string;
-  read_at: string | null;
+  read_count: number;
 }
 
 export interface Conversation {
   id: string;
-  other_user: CurrentUser;
+  type: 'direct' | 'group';
+  name: string | null;
+  other_user: CurrentUser | null;
+  members: CurrentUser[];
   last_message: Message | null;
   unread_count: number;
+}
+
+export interface GroupCreateRequest {
+  name: string;
+  member_user_ids: string[];
 }
 
 // ---- WebSocket 訊息協定 ----
@@ -62,6 +70,6 @@ export type ClientWsMessage =
 export type ServerWsMessage =
   | { type: 'ack'; temp_id: string; message: Message }
   | { type: 'message'; message: Message }
-  | { type: 'read'; conversation_id: string; reader_id: string }
+  | { type: 'read'; conversation_id: string; reader_id: string; message_ids: string[] }
   | { type: 'typing'; conversation_id: string; user_id: string }
   | { type: 'error'; reason: string; temp_id?: string };
