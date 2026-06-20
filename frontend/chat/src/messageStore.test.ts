@@ -95,6 +95,7 @@ describe('messageStore 樂觀更新', () => {
     const next = applyMessageUpdate(list, updated);
     expect(next.find((m) => m.id === 'm1')!.content).toBe('edited');
     expect(next.find((m) => m.id === 'm1')!.edited_at).toBe('2026-06-20T00:00:00Z');
+    expect(next.find((m) => m.id === 'm1')!.status).toBe('sent');
     expect(next.find((m) => m.id === 'm2')!.content).toBe('b');
   });
 
