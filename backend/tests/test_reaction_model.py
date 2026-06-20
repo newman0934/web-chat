@@ -41,18 +41,21 @@ async def test_reaction_unique_per_user_emoji(session):
     m = Message(conversation_id=conv.id, sender_id=u.id, content="hi")
     session.add(m)
     await session.flush()
+    # 先擷取 id；session.rollback() 會 expire 物件，之後再讀 m.id/u.id 會觸發
+    # async lazy-load（MissingGreenlet）。
+    mid, uid = m.id, u.id
 
-    session.add(Reaction(message_id=m.id, user_id=u.id, emoji="👍"))
+    session.add(Reaction(message_id=mid, user_id=uid, emoji="👍"))
     await session.commit()
-    session.add(Reaction(message_id=m.id, user_id=u.id, emoji="👍"))
+    session.add(Reaction(message_id=mid, user_id=uid, emoji="👍"))
     with pytest.raises(IntegrityError):
         await session.commit()
     await session.rollback()
 
     # 不同 emoji 可共存
-    session.add(Reaction(message_id=m.id, user_id=u.id, emoji="❤️"))
+    session.add(Reaction(message_id=mid, user_id=uid, emoji="❤️"))
     await session.commit()
-    rows = (await session.execute(select(Reaction).where(Reaction.message_id == m.id))).scalars().all()
+    rows = (await session.execute(select(Reaction).where(Reaction.message_id == mid))).scalars().all()
     assert len(rows) == 2
 
 
