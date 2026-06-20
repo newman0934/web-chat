@@ -4,6 +4,7 @@ import type { Message } from '../../contracts';
 import {
   addIncoming,
   addOptimistic,
+  applyMessageUpdate,
   applyReadReceipt,
   fromHistory,
   makeOptimistic,
@@ -21,6 +22,9 @@ function realMessage(id: string, content: string): Message {
     created_at: '2026-06-19T00:00:00Z',
     read_count: 0,
     attachment: null,
+    edited_at: null,
+    deleted: false,
+    reactions: [],
   };
 }
 
@@ -83,5 +87,21 @@ describe('messageStore 樂觀更新', () => {
     const m = makeOptimistic('c1', 'me', '', 't1', att);
     expect(m.attachment).toEqual(att);
     expect(m.status).toBe('sending');
+  });
+
+  it('applyMessageUpdate 依 id 取代該則', () => {
+    const list = fromHistory([realMessage('m1', 'a'), realMessage('m2', 'b')]);
+    const updated = { ...realMessage('m1', 'a'), content: 'edited', edited_at: '2026-06-20T00:00:00Z' };
+    const next = applyMessageUpdate(list, updated);
+    expect(next.find((m) => m.id === 'm1')!.content).toBe('edited');
+    expect(next.find((m) => m.id === 'm1')!.edited_at).toBe('2026-06-20T00:00:00Z');
+    expect(next.find((m) => m.id === 'm2')!.content).toBe('b');
+  });
+
+  it('applyMessageUpdate 找不到 id 時不動', () => {
+    const list = fromHistory([realMessage('m1', 'a')]);
+    const next = applyMessageUpdate(list, { ...realMessage('zzz', 'x') });
+    expect(next).toHaveLength(1);
+    expect(next[0].id).toBe('m1');
   });
 });

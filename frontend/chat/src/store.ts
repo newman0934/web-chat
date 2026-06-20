@@ -8,6 +8,7 @@ import type { Contact, Conversation, Message } from '../../contracts';
 import {
   addIncoming,
   addOptimistic,
+  applyMessageUpdate,
   applyReadReceipt,
   fromHistory,
   markFailed,
@@ -46,6 +47,8 @@ interface ChatState {
   failMessage: (tempId: string) => void;
   /** 把某對話內某 temp_id 的訊息狀態改回 sending（重試用）。 */
   resendMessage: (conversationId: string, tempId: string) => void;
+  /** 收到 message_updated 事件：依 id 取代該對話內對應訊息。 */
+  updateMessage: (message: Message) => void;
 
   /** 重置成初始狀態（登入切換 / 卸載時呼叫，避免殘留上一位使用者資料）。 */
   reset: () => void;
@@ -152,6 +155,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ),
       },
     })),
+
+  updateMessage: (message) =>
+    set((s) => {
+      const convId = message.conversation_id;
+      const list = s.messages[convId];
+      if (!list) return s;
+      return { messages: { ...s.messages, [convId]: applyMessageUpdate(list, message) } };
+    }),
 
   reset: () => set({ ...initialState }),
 }));

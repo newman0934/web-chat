@@ -13,6 +13,9 @@ function realMsg(id: string, conversationId = 'c1', over: Partial<Message> = {})
     created_at: '2026-06-20T00:00:00Z',
     read_count: 0,
     attachment: null,
+    edited_at: null,
+    deleted: false,
+    reactions: [],
     ...over,
   };
 }
@@ -87,5 +90,12 @@ describe('useChatStore', () => {
     const cs = useChatStore.getState().conversations;
     expect(cs.find((c) => c.id === 'c1')!.unread_count).toBe(0);
     expect(cs.find((c) => c.id === 'c2')!.unread_count).toBe(5);
+  });
+
+  it('updateMessage 套用到正確對話', () => {
+    const s = useChatStore.getState();
+    s.loadHistory('c1', [realMsg('m1')]);
+    s.updateMessage({ ...realMsg('m1'), content: 'edited', conversation_id: 'c1' });
+    expect(useChatStore.getState().messages['c1'][0].content).toBe('edited');
   });
 });
