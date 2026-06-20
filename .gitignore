@@ -34,4 +34,7 @@ backend/uploads/
 
 # Demo / throwaway artifacts
 /0*-*.png
+/group-*.png
+/attach-*.png
+/.e2e-files/
 **/.playwright-mcp/
