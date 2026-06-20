@@ -6,8 +6,16 @@
 
 ## 一句話現況
 
-MVP + **群組聊天** + **圖片/檔案附件** + **訊息編輯/刪除/表情回應**（皆最小可用）已實作完成、前後端測試全綠。
-群組功能在 `feat/group-chat`；附件功能已併入 group-chat；訊息動作在 `feat/message-actions`（從 group-chat 切出）。皆採 subagent-driven 逐 task 完成並 review。
+MVP + **群組聊天** + **圖片/檔案附件** + **訊息編輯/刪除/表情回應** + **語音/視訊通話（1對1，WebRTC P2P）**（皆最小可用）已實作完成、前後端測試全綠。
+群組功能在 `feat/group-chat`；附件功能已併入 group-chat；訊息動作在 `feat/message-actions`（從 group-chat 切出）；語音/視訊通話在 `feat/message-actions`（子任務追加）。皆採 subagent-driven 逐 task 完成並 review。
+
+## 語音/視訊通話（2026-06-21 完成，feat/message-actions 分支）
+
+- 1對1 WebRTC P2P 通話，訊號（offer/answer/ICE/reject/hangup）走現有 WebSocket 中繼，媒體流不經後端。
+- 功能：撥號（Thread header 📞 鈕，僅 direct 對話）、來電通知（CallOverlay 覆蓋層）、接聽/拒接/掛斷、靜音 🎙️、關鏡頭 📷、離線即時回 `call_unavailable`。
+- 架構：`callMachine.ts`（純 reducer）→ `useCall.ts`（副作用 hook）→ `CallOverlay.tsx`（UI）→ `ChatApp.tsx`（接線）。後端 `_handle_call_signal` 轉送訊號（不落庫）、`are_friends` 守門、`call_unavailable` 偵測離線。
+- 前端 vitest：callMachine 6 + CallOverlay 4 + 既有 28 = 38 passed，tsc 乾淨。E2E 為手動（兩瀏覽器，STUN-only，localhost 同機）。
+- **限制**：無 TURN server，跨 NAT 的不同網路環境可能無法 P2P 穿透；localhost 同機可正常運作。
 
 ## 訊息編輯/刪除/表情（2026-06-20 完成，feat/message-actions 分支）
 
