@@ -15,6 +15,7 @@ interface ThreadProps {
   onLoadMore: () => void;
   onSend: (content: string) => void;
   onRetry: (tempId: string) => void;
+  attachmentUrl: (id: string) => string;
 }
 
 /** 右側對話視窗：訊息列表、載入更多、輸入框與送出。 */
@@ -28,6 +29,7 @@ export function Thread({
   onLoadMore,
   onSend,
   onRetry,
+  attachmentUrl,
 }: ThreadProps) {
   const [draft, setDraft] = useState('');
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -71,6 +73,7 @@ export function Thread({
             isGroup={isGroup}
             senderName={memberNames[m.sender_id]}
             onRetry={onRetry}
+            attachmentUrl={attachmentUrl}
           />
         ))}
         <div ref={bottomRef} />
@@ -99,15 +102,37 @@ export function Thread({
 }
 
 /** 單則訊息泡泡：區分我方/對方，我方顯示傳送狀態與重試。 */
-function MessageBubble({ message, mine, isGroup, senderName, onRetry }: {
+function MessageBubble({ message, mine, isGroup, senderName, onRetry, attachmentUrl }: {
   message: ChatMessage; mine: boolean; isGroup: boolean;
   senderName?: string; onRetry: (tempId: string) => void;
+  attachmentUrl: (id: string) => string;
 }) {
   return (
     <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
       <div className={`max-w-[70%] rounded-2xl px-4 py-2 ${mine ? 'bg-indigo-600 text-white' : 'bg-white text-slate-800 shadow'}`}>
         {isGroup && !mine && senderName && (
           <p className="mb-0.5 text-xs font-medium text-indigo-500">{senderName}</p>
+        )}
+        {message.attachment && (
+          message.attachment.is_image ? (
+            <a href={attachmentUrl(message.attachment.id)} target="_blank" rel="noreferrer">
+              <img
+                src={attachmentUrl(message.attachment.id)}
+                alt={message.attachment.original_name}
+                className="mb-1 max-h-60 max-w-full rounded-lg"
+              />
+            </a>
+          ) : (
+            <a
+              href={attachmentUrl(message.attachment.id)}
+              target="_blank"
+              rel="noreferrer"
+              className="mb-1 flex items-center gap-2 rounded-lg bg-black/10 px-3 py-2 text-sm underline"
+            >
+              📎 {message.attachment.original_name}
+              <span className="opacity-70">({message.attachment.size} bytes)</span>
+            </a>
+          )
         )}
         <p className="whitespace-pre-wrap break-words">{message.content}</p>
         {mine && (

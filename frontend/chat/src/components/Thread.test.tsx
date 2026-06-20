@@ -13,6 +13,7 @@ function msg(over: Partial<ChatMessage>): ChatMessage {
     created_at: '2026-06-19T00:00:00Z',
     read_count: 0,
     status: 'sent',
+    attachment: null,
     ...over,
   };
 }
@@ -30,6 +31,7 @@ describe('Thread', () => {
         onLoadMore={vi.fn()}
         onSend={vi.fn()}
         onRetry={vi.fn()}
+        attachmentUrl={(id) => 'http://api/attachments/' + id}
       />,
     );
     expect(screen.getByText('Bob')).toBeInTheDocument();
@@ -48,6 +50,7 @@ describe('Thread', () => {
         onLoadMore={vi.fn()}
         onSend={vi.fn()}
         onRetry={vi.fn()}
+        attachmentUrl={(id) => 'http://api/attachments/' + id}
       />,
     );
     expect(screen.getByText('傳送中…')).toBeInTheDocument();
@@ -66,6 +69,7 @@ describe('Thread', () => {
         onLoadMore={vi.fn()}
         onSend={vi.fn()}
         onRetry={onRetry}
+        attachmentUrl={(id) => 'http://api/attachments/' + id}
       />,
     );
     fireEvent.click(screen.getByText('未送出，點擊重試'));
@@ -85,6 +89,7 @@ describe('Thread', () => {
         onLoadMore={vi.fn()}
         onSend={onSend}
         onRetry={vi.fn()}
+        attachmentUrl={(id) => 'http://api/attachments/' + id}
       />,
     );
     const input = screen.getByLabelText('訊息輸入') as HTMLInputElement;
@@ -104,9 +109,29 @@ describe('Thread', () => {
         ]}
         currentUserId="me" canLoadMore={false}
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+        attachmentUrl={(id) => 'http://api/attachments/' + id}
       />,
     );
     expect(screen.getByText('Bob')).toBeInTheDocument();
     expect(screen.getByText('已讀 2')).toBeInTheDocument();
+  });
+
+  it('圖片附件渲染 img、檔案附件渲染下載連結', () => {
+    render(
+      <Thread
+        title="Bob" isGroup={false} memberNames={{}}
+        attachmentUrl={(id) => `http://api/attachments/${id}`}
+        messages={[
+          msg({ id: 'm1', attachment: { id: 'img1', original_name: 'p.png', content_type: 'image/png', size: 3, is_image: true } }),
+          msg({ id: 'm2', attachment: { id: 'doc1', original_name: 'r.pdf', content_type: 'application/pdf', size: 9, is_image: false } }),
+        ]}
+        currentUserId="me" canLoadMore={false}
+        onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+      />,
+    );
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('src', 'http://api/attachments/img1');
+    const link = screen.getByRole('link', { name: /r\.pdf/ });
+    expect(link).toHaveAttribute('href', 'http://api/attachments/doc1');
   });
 });
