@@ -174,8 +174,10 @@ export function useCall(send: (m: ClientWsMessage) => boolean): UseCall {
         case 'call_answer': {
           const pc = pcRef.current;
           if (!pc) return;
-          void pc.setRemoteDescription(msg.sdp).then(flushIce);
-          dispatch({ type: 'CONNECTED' });
+          void pc.setRemoteDescription(msg.sdp)
+            .then(flushIce)
+            .then(() => dispatch({ type: 'CONNECTED' }))
+            .catch(() => { cleanup(); dispatch({ type: 'END' }); });
           break;
         }
         case 'call_ice': {
