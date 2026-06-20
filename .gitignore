@@ -29,6 +29,9 @@ dist/
 pgdata/
 backend/dev.db
 
+# Uploaded files
+backend/uploads/
+
 # Demo / throwaway artifacts
 /0*-*.png
 **/.playwright-mcp/

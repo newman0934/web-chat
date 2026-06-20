@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 1440  # token 有效時間（分鐘），預設 1 天
     # CORS 允許來源以逗號分隔字串存放（環境變數友善），用時再切成 list。
     cors_origins: str = "http://localhost:5000,http://localhost:5001,http://localhost:5002"
+    upload_dir: str = str(
+        __import__("pathlib").Path(__file__).resolve().parents[1] / "uploads"
+    )
 
     @property
     def cors_origin_list(self) -> list[str]:
