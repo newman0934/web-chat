@@ -170,7 +170,7 @@ describe('Thread', () => {
         ]}
         currentUserId="me" canLoadMore={false}
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
-        onEdit={vi.fn()} onDelete={vi.fn()} onReact={vi.fn()} />,
+        onEdit={vi.fn()} onDelete={vi.fn()} onReact={vi.fn()} onUpload={vi.fn()} />,
     );
     expect(screen.getByText('已編輯')).toBeInTheDocument();
     expect(screen.getByText('此訊息已刪除')).toBeInTheDocument();
@@ -184,7 +184,7 @@ describe('Thread', () => {
         messages={[msg({ id: 'm1', reactions: [{ emoji: '👍', count: 1, user_ids: ['me'] }] })]}
         currentUserId="me" canLoadMore={false}
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
-        onEdit={vi.fn()} onDelete={vi.fn()} onReact={onReact} />,
+        onEdit={vi.fn()} onDelete={vi.fn()} onReact={onReact} onUpload={vi.fn()} />,
     );
     fireEvent.click(screen.getByRole('button', { name: /👍 1/ }));
     expect(onReact).toHaveBeenCalledWith('m1', '👍');
@@ -198,7 +198,7 @@ describe('Thread', () => {
         messages={[msg({ id: 'm1', sender_id: 'me', content: 'mine' })]}
         currentUserId="me" canLoadMore={false}
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
-        onEdit={vi.fn()} onDelete={onDelete} onReact={vi.fn()} />,
+        onEdit={vi.fn()} onDelete={onDelete} onReact={vi.fn()} onUpload={vi.fn()} />,
     );
     fireEvent.click(screen.getByRole('button', { name: '刪除' }));
     expect(onDelete).toHaveBeenCalledWith('m1');
