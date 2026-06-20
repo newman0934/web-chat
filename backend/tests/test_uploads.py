@@ -1,4 +1,8 @@
+import uuid
+
 import pytest
+
+from app.models import Attachment, Message
 
 pytestmark = pytest.mark.asyncio
 
@@ -66,3 +70,57 @@ async def test_download_accepts_query_token(client, register_user, auth_headers)
     resp = await client.get(f"/attachments/{att['id']}?token={owner}")
     assert resp.status_code == 200
     assert resp.content == b"hi"
+
+
+async def test_bound_attachment_member_permission(client, register_user, auth_headers, session_factory):
+    """已綁定附件：對話成員可下載，非成員收到 404。"""
+    # 建立三個使用者；alice + bob 互為好友（會自動建立 direct conversation）
+    alice = await register_user("alice_ba@example.com", "Alice")
+    bob = await register_user("bob_ba@example.com", "Bob")
+    cara = await register_user("cara_ba@example.com", "Cara")
+
+    # alice 加 bob 為好友，同時建立 direct conversation
+    add_resp = await client.post(
+        "/contacts",
+        json={"email": "bob_ba@example.com"},
+        headers=auth_headers(alice),
+    )
+    assert add_resp.status_code == 201, add_resp.text
+    conv_id = add_resp.json()["conversation_id"]
+
+    # alice 取得自己的 user id
+    me_resp = await client.get("/users/me", headers=auth_headers(alice))
+    assert me_resp.status_code == 200, me_resp.text
+    alice_id = uuid.UUID(me_resp.json()["id"])
+
+    # alice 上傳孤兒附件
+    upload_resp = await client.post(
+        "/uploads",
+        files={"file": ("secret.txt", b"bound-content", "text/plain")},
+        headers=auth_headers(alice),
+    )
+    assert upload_resp.status_code == 201, upload_resp.text
+    att_id = uuid.UUID(upload_resp.json()["id"])
+
+    # 透過 session_factory 直接在 DB 建一則 Message，並把附件 message_id 綁上去
+    async with session_factory() as session:
+        async with session.begin():
+            msg = Message(
+                conversation_id=uuid.UUID(conv_id),
+                sender_id=alice_id,
+                content="附件訊息",
+            )
+            session.add(msg)
+            await session.flush()
+
+            att = await session.get(Attachment, att_id)
+            att.message_id = msg.id
+
+    # bob（對話成員）可下載
+    bob_resp = await client.get(f"/attachments/{att_id}", headers=auth_headers(bob))
+    assert bob_resp.status_code == 200, bob_resp.text
+    assert bob_resp.content == b"bound-content"
+
+    # cara（非成員）收到 404
+    cara_resp = await client.get(f"/attachments/{att_id}", headers=auth_headers(cara))
+    assert cara_resp.status_code == 404, cara_resp.text

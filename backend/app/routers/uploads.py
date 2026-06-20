@@ -99,6 +99,8 @@ async def download(
             raise HTTPException(status_code=404, detail="查無附件")
     else:
         msg = await db.get(Message, att.message_id)
+        if msg is None:
+            raise HTTPException(status_code=404, detail="查無附件")
         conv = await get_conversation_for_member(db, msg.conversation_id, user.id)
         if conv is None:
             raise HTTPException(status_code=404, detail="查無附件")
@@ -110,7 +112,8 @@ async def download(
     if att.is_image:
         disposition = "inline"
     else:
-        disposition = f'attachment; filename="{att.original_name}"'
+        safe_name = att.original_name.replace('"', "_")
+        disposition = f'attachment; filename="{safe_name}"'
     return FileResponse(
         path,
         media_type=att.content_type,
