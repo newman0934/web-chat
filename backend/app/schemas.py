@@ -48,6 +48,17 @@ class ContactOut(BaseModel):
     conversation_id: uuid.UUID
 
 
+# ---- attachments ----
+class AttachmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    original_name: str
+    content_type: str
+    size: int
+    is_image: bool
+
+
 # ---- conversations / messages ----
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -58,6 +69,7 @@ class MessageOut(BaseModel):
     content: str
     created_at: datetime
     read_count: int = 0  # 讀過此則的人數（排除寄件人）
+    attachment: AttachmentOut | None = None
 
 
 class GroupCreateRequest(BaseModel):
