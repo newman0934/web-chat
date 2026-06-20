@@ -36,6 +36,14 @@ export interface Contact {
   conversation_id: string;
 }
 
+export interface Attachment {
+  id: string;
+  original_name: string;
+  content_type: string;
+  size: number;
+  is_image: boolean;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -43,7 +51,10 @@ export interface Message {
   content: string;
   created_at: string;
   read_count: number;
+  attachment: Attachment | null;
 }
+
+export type AttachmentOut = Attachment;
 
 export interface Conversation {
   id: string;
@@ -63,7 +74,7 @@ export interface GroupCreateRequest {
 // ---- WebSocket 訊息協定 ----
 
 export type ClientWsMessage =
-  | { type: 'message'; conversation_id: string; content: string; temp_id: string }
+  | { type: 'message'; conversation_id: string; content: string; temp_id: string; attachment_id?: string }
   | { type: 'read'; conversation_id: string }
   | { type: 'typing'; conversation_id: string };
 

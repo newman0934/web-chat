@@ -20,6 +20,7 @@ function realMessage(id: string, content: string): Message {
     content,
     created_at: '2026-06-19T00:00:00Z',
     read_count: 0,
+    attachment: null,
   };
 }
 
@@ -75,5 +76,12 @@ describe('messageStore 樂觀更新', () => {
     const next = applyReadReceipt(list, ['m1']);
     expect(next.find((m) => m.id === 'm1')!.read_count).toBe(1);
     expect(next.find((m) => m.id === 'm2')!.read_count).toBe(0);
+  });
+
+  it('makeOptimistic 可帶附件', () => {
+    const att = { id: 'a1', original_name: 'p.png', content_type: 'image/png', size: 3, is_image: true };
+    const m = makeOptimistic('c1', 'me', '', 't1', att);
+    expect(m.attachment).toEqual(att);
+    expect(m.status).toBe('sending');
   });
 });

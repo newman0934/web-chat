@@ -1,7 +1,7 @@
 // chat remote 的 REST 客戶端：包裝 fetch，統一帶上 JWT 與錯誤處理。
 // 即時訊息走 WebSocket（見 useChatSocket.ts）；這裡只負責「非即時」的讀取與加好友。
 
-import type { Contact, Conversation, GroupCreateRequest, Message } from '../../contracts';
+import type { Attachment, Contact, Conversation, GroupCreateRequest, Message } from '../../contracts';
 
 export class ApiClient {
   /** @param baseUrl REST API 根路徑 @param token JWT，附在 Authorization header */
@@ -67,6 +67,23 @@ export class ApiClient {
     return this.req<Message[]>(
       `/conversations/${conversationId}/messages${qs ? `?${qs}` : ''}`,
     );
+  }
+
+  /** 上傳單一檔案，回附件中繼資料。不手動設 Content-Type，讓瀏覽器帶 multipart boundary。 */
+  async uploadFile(file: File): Promise<Attachment> {
+    const form = new FormData();
+    form.append('file', file);
+    const resp = await fetch(`${this.baseUrl}/uploads`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.token}` },
+      body: form,
+    });
+    if (resp.status === 401) throw new UnauthorizedError();
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new ApiError(data.detail ?? `上傳失敗 (${resp.status})`, resp.status);
+    }
+    return (await resp.json()) as Attachment;
   }
 }
 
