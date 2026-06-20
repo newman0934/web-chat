@@ -283,8 +283,8 @@ function MessageBubble({
         <ReactionPicker onPick={(e) => onReact(message.id, e)} />
       </div>
 
-      {/* 自己且未刪：編輯/刪除 */}
-      {mine && (
+      {/* 自己、已送達（sent）且未刪：編輯/刪除（樂觀訊息尚未落庫，不顯示） */}
+      {mine && message.status === 'sent' && (
         editing ? (
           <form
             className="mt-1 flex gap-1"
