@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import and_, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Attachment, Conversation, ConversationMember, Message, MessageRead
+from app.models import Attachment, Conversation, ConversationMember, Message, MessageRead, Reaction
 
 
 def direct_key(a: uuid.UUID, b: uuid.UUID) -> str:
@@ -133,3 +133,21 @@ async def get_attachment_for_message(
         select(Attachment).where(Attachment.message_id == message_id)
     )
     return result.scalar_one_or_none()
+
+
+async def get_reaction_groups(
+    db: AsyncSession, message_id: uuid.UUID
+) -> list:
+    """依 emoji 聚合該訊息的所有 Reaction，回傳 list[ReactionGroupOut]。"""
+    from app.schemas import ReactionGroupOut  # 函式內 import 避免循環匯入
+
+    rows = await db.execute(
+        select(Reaction.emoji, Reaction.user_id).where(Reaction.message_id == message_id)
+    )
+    by_emoji: dict[str, list[uuid.UUID]] = {}
+    for emoji, uid in rows.all():
+        by_emoji.setdefault(emoji, []).append(uid)
+    return [
+        ReactionGroupOut(emoji=e, count=len(uids), user_ids=uids)
+        for e, uids in by_emoji.items()
+    ]
