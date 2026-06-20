@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.db import get_db
 from app.models import Contact, Conversation, ConversationMember, Message, User
-from app.schemas import ConversationOut, GroupCreateRequest, MessageOut, UserOut
+from app.schemas import AttachmentOut, ConversationOut, GroupCreateRequest, MessageOut, UserOut
 from app.services.conversations import (
     create_group_conversation,
+    get_attachment_for_message,
     get_conversation_for_member,
     get_member_ids,
     read_count,
@@ -118,11 +119,15 @@ async def list_messages(
     result = await db.execute(stmt)
     messages = list(result.scalars().all())
     messages.reverse()
-    return [
-        MessageOut(
-            id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
-            content=m.content, created_at=m.created_at,
-            read_count=await read_count(db, m.id),
+    out = []
+    for m in messages:
+        att = await get_attachment_for_message(db, m.id)
+        out.append(
+            MessageOut(
+                id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
+                content=m.content, created_at=m.created_at,
+                read_count=await read_count(db, m.id),
+                attachment=AttachmentOut.model_validate(att) if att else None,
+            )
         )
-        for m in messages
-    ]
+    return out

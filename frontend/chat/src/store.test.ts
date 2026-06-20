@@ -12,6 +12,7 @@ function realMsg(id: string, conversationId = 'c1', over: Partial<Message> = {})
     content: 'hi',
     created_at: '2026-06-20T00:00:00Z',
     read_count: 0,
+    attachment: null,
     ...over,
   };
 }

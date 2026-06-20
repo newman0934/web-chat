@@ -6,8 +6,16 @@
 
 ## 一句話現況
 
-MVP + **群組聊天（最小可用）** 已實作完成、前後端測試全綠、瀏覽器端到端 demo 跑過成功。
-群組功能在 `feat/group-chat` 分支，採 subagent-driven 流程逐 task 完成並 review。
+MVP + **群組聊天** + **圖片/檔案附件**（皆最小可用）已實作完成、前後端測試全綠、瀏覽器端到端 demo 跑過成功。
+群組功能在 `feat/group-chat`；附件功能在 `feat/file-attachments`（從 group-chat 切出，含 zustand 重構）。皆採 subagent-driven 逐 task 完成並 review。
+
+## 圖片與檔案附件（2026-06-20 完成，feat/file-attachments 分支）
+
+- 兩段式：先 `POST /uploads`（存 `backend/uploads/`、DB 存 Attachment 中繼資料）→ 再走現有 WS 送訊息帶 `attachment_id` 綁定並廣播。下載走授權的 `GET /attachments/{id}`（接受 `?token=` 供 `<img>`）。見 [附件設計](docs/superpowers/specs/2026-06-20-file-attachments-design.md)。
+- 功能：一則一附件、圖片內嵌、其他檔案下載連結、單檔 10MB、成員權限。
+- 後端 pytest 41 passed（上傳/下載權限/413、WS 帶附件/拒用過或他人附件、遷移）；前端 chat vitest 22 passed、三 app tsc 乾淨。
+- E2E：Alice 在群組上傳圖片（內嵌顯示）與 txt（下載連結），皆即時送達。截圖 `attach-01/02`。
+- follow-up：非 401 上傳錯誤（如 413 檔案過大）目前無 UI 提示（brief 刻意把上傳 UI 最小化）。
 
 ## 群組聊天（2026-06-20 完成，feat/group-chat 分支）
 

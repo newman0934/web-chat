@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import and_, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation, ConversationMember, Message, MessageRead
+from app.models import Attachment, Conversation, ConversationMember, Message, MessageRead
 
 
 def direct_key(a: uuid.UUID, b: uuid.UUID) -> str:
@@ -124,3 +124,12 @@ async def mark_read(
     db.add_all([MessageRead(message_id=mid, user_id=user_id) for mid in ids])
     await db.flush()
     return ids
+
+
+async def get_attachment_for_message(
+    db: AsyncSession, message_id: uuid.UUID
+) -> Attachment | None:
+    result = await db.execute(
+        select(Attachment).where(Attachment.message_id == message_id)
+    )
+    return result.scalar_one_or_none()

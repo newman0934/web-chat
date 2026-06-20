@@ -150,20 +150,39 @@ export default function ChatApp({
     }
   }, [api, onLogout]);
 
+  const attachmentUrl = useCallback(
+    (id: string) => `${apiBaseUrl}/attachments/${id}?token=${encodeURIComponent(token)}`,
+    [apiBaseUrl, token],
+  );
+
+  const onUpload = useCallback(
+    async (file: File) => {
+      try {
+        return await api.uploadFile(file);
+      } catch (err) {
+        if (err instanceof UnauthorizedError) onLogout();
+        return null;
+      }
+    },
+    [api, onLogout],
+  );
+
   // ---- 送訊息（樂觀更新） ----
   /** 樂觀送出訊息：先插入 UI，再經 WS 送出；連線不可用則標 failed。 */
   const sendMessage = useCallback(
-    (content: string) => {
+    (content: string, attachmentId?: string) => {
       const st = useChatStore.getState();
       const active = st.activeId;
       if (!active) return;
       const tempId = crypto.randomUUID();
+      // 樂觀訊息先不帶附件預覽，待 server ack 帶回正式 attachment 再顯示。
       st.appendOptimistic(active, makeOptimistic(active, currentUser.id, content, tempId));
       const ok = socketRef.current?.send({
         type: 'message',
         conversation_id: active,
         content,
         temp_id: tempId,
+        attachment_id: attachmentId,
       });
       if (!ok) useChatStore.getState().failMessage(tempId);
     },
@@ -261,6 +280,8 @@ export default function ChatApp({
           onLoadMore={loadMore}
           onSend={sendMessage}
           onRetry={retry}
+          attachmentUrl={attachmentUrl}
+          onUpload={onUpload}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center text-slate-400">
