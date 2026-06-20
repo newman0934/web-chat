@@ -6,7 +6,16 @@
 
 ## 一句話現況
 
-MVP 全部功能已實作完成、前後端測試全綠、瀏覽器端到端 demo 跑過一次成功。可進入打磨 / 部署 / 加值階段。
+MVP + **群組聊天（最小可用）** 已實作完成、前後端測試全綠、瀏覽器端到端 demo 跑過成功。
+群組功能在 `feat/group-chat` 分支，採 subagent-driven 流程逐 task 完成並 review。
+
+## 群組聊天（2026-06-20 完成，feat/group-chat 分支）
+
+- 統一資料模型：1對1 與群組共用 `Conversation`/`ConversationMember`/`MessageRead`（見 [群組設計](docs/superpowers/specs/2026-06-19-group-chat-design.md)）。
+- 功能：建群（命名+選好友）、群組即時收發、成員顯示、每則「已讀 N」、群組未讀數。
+- 後端 pytest 29 passed（含 WS 群組廣播、已讀 message_ids、遷移回歸測試）；前端 vitest 21 passed、三 app tsc 乾淨。
+- E2E 驗證：Alice 建「專案討論群」(3人)→送訊息→Bob/Cara 讀取→Alice 看到「已讀 2」。截圖 `group-01..02`。
+- 修過一個 E2E 才抓到的真 bug：Alembic 0002 在 SQLite 的 `direct_key` 格式與 app 不一致導致遷移後重複建對話（commit `5b79f5c`，已加回歸測試）。
 
 ## 已完成 ✅
 
