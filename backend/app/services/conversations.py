@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import and_, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Attachment, Conversation, ConversationMember, Message, MessageRead, Reaction
+from app.models import Attachment, Contact, Conversation, ConversationMember, Message, MessageRead, Reaction
 
 
 def direct_key(a: uuid.UUID, b: uuid.UUID) -> str:
@@ -151,3 +151,14 @@ async def get_reaction_groups(
         ReactionGroupOut(emoji=e, count=len(uids), user_ids=uids)
         for e, uids in by_emoji.items()
     ]
+
+
+async def are_friends(db: AsyncSession, a: uuid.UUID, b: uuid.UUID) -> bool:
+    """雙方是否為好友。加好友為雙向建立兩筆 Contact，故查單向即足。"""
+    result = await db.execute(
+        select(Contact.id).where(
+            Contact.user_id == a,
+            Contact.contact_user_id == b,
+        )
+    )
+    return result.scalar_one_or_none() is not None
