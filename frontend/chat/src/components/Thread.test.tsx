@@ -32,6 +32,7 @@ describe('Thread', () => {
         onSend={vi.fn()}
         onRetry={vi.fn()}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
+        onUpload={vi.fn()}
       />,
     );
     expect(screen.getByText('Bob')).toBeInTheDocument();
@@ -51,6 +52,7 @@ describe('Thread', () => {
         onSend={vi.fn()}
         onRetry={vi.fn()}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
+        onUpload={vi.fn()}
       />,
     );
     expect(screen.getByText('傳送中…')).toBeInTheDocument();
@@ -70,6 +72,7 @@ describe('Thread', () => {
         onSend={vi.fn()}
         onRetry={onRetry}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
+        onUpload={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByText('未送出，點擊重試'));
@@ -90,12 +93,13 @@ describe('Thread', () => {
         onSend={onSend}
         onRetry={vi.fn()}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
+        onUpload={vi.fn()}
       />,
     );
     const input = screen.getByLabelText('訊息輸入') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '在嗎' } });
     fireEvent.click(screen.getByRole('button', { name: '送出' }));
-    expect(onSend).toHaveBeenCalledWith('在嗎');
+    expect(onSend).toHaveBeenCalledWith('在嗎', undefined);
     expect(input.value).toBe('');
   });
 
@@ -110,6 +114,7 @@ describe('Thread', () => {
         currentUserId="me" canLoadMore={false}
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
+        onUpload={vi.fn()}
       />,
     );
     expect(screen.getByText('Bob')).toBeInTheDocument();
@@ -127,10 +132,13 @@ describe('Thread', () => {
         ]}
         currentUserId="me" canLoadMore={false}
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+        onUpload={vi.fn()}
       />,
     );
     const img = screen.getByRole('img');
     expect(img).toHaveAttribute('src', 'http://api/attachments/img1');
+    const imgLink = img.closest('a');
+    expect(imgLink).toHaveAttribute('href', 'http://api/attachments/img1');
     const link = screen.getByRole('link', { name: /r\.pdf/ });
     expect(link).toHaveAttribute('href', 'http://api/attachments/doc1');
   });
