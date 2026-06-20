@@ -4,6 +4,7 @@ Revision ID: 0002
 Revises: 0001
 Create Date: 2026-06-19
 """
+import uuid
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -57,7 +58,10 @@ def upgrade() -> None:
         "SELECT id, user_a_id, user_b_id FROM conversations"
     )).fetchall()
     for cid, a, b in convs:
-        a_s, b_s = sorted([str(a), str(b)])
+        # 正規化成帶連字號的標準 UUID 字串，與 app 的 direct_key() 一致；
+        # SQLite 把 Uuid 存成 32 字元 hex（無連字號），若不正規化會與 app 算出的 key 不符，
+        # 導致遷移後 app 找不到舊對話而重複建立。
+        a_s, b_s = sorted([str(uuid.UUID(str(a))), str(uuid.UUID(str(b)))])
         conn.execute(
             sa.text("UPDATE conversations SET type='direct', direct_key=:k WHERE id=:i"),
             {"k": f"{a_s}:{b_s}", "i": cid},
