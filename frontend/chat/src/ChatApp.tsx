@@ -6,8 +6,10 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import type { ChatAppProps, ServerWsMessage } from '../../contracts';
 import { ApiClient, ApiError, UnauthorizedError } from './api';
+import { CallOverlay } from './components/CallOverlay';
 import { Sidebar } from './components/Sidebar';
 import { Thread } from './components/Thread';
+import { useCall } from './useCall';
 import { makeOptimistic } from './messageStore';
 import { useChatStore } from './store';
 import { useChatSocket } from './useChatSocket';
@@ -98,6 +100,14 @@ export default function ChatApp({
         case 'message_updated':
           st.updateMessage(msg.message);
           break;
+        case 'call_offer':
+        case 'call_answer':
+        case 'call_ice':
+        case 'call_reject':
+        case 'call_hangup':
+        case 'call_unavailable':
+          callRef.current.handleSignal(msg);
+          break;
         default:
           break;
       }
@@ -118,6 +128,15 @@ export default function ChatApp({
   });
   const socketRef = useRef(socket);
   socketRef.current = socket;
+
+  // 通話：用穩定的 wsSend 包裝 socketRef，讓 useCall 不因 socket 換參考而重建。
+  const wsSend = useCallback(
+    (m: Parameters<typeof socket.send>[0]) => socketRef.current?.send(m) ?? false,
+    [],
+  );
+  const call = useCall(wsSend);
+  const callRef = useRef(call);
+  callRef.current = call;
 
   /** 切換對話：必要時拉歷史、送 read 事件、清本地未讀數。 */
   const selectConversation = useCallback(
@@ -259,6 +278,10 @@ export default function ChatApp({
   );
 
   const activeConv = conversations.find((c) => c.id === activeId) ?? null;
+  const otherUser = activeConv && activeConv.type === 'direct' ? activeConv.other_user : null;
+  const startCall = useCallback(() => {
+    if (otherUser) call.startCall({ id: otherUser.id, display_name: otherUser.display_name });
+  }, [otherUser, call]);
   const isGroup = activeConv?.type === 'group';
   const memberNames = Object.fromEntries(
     (activeConv?.members ?? []).map((m) => [m.id, m.display_name]),
@@ -298,12 +321,26 @@ export default function ChatApp({
           onEdit={editMessage}
           onDelete={deleteMessage}
           onReact={toggleReaction}
+          onStartCall={otherUser ? startCall : undefined}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center text-slate-400">
           選擇一個對話開始聊天
         </div>
       )}
+      <CallOverlay
+        status={call.callState}
+        peerName={call.peer?.display_name ?? otherUser?.display_name ?? null}
+        localStream={call.localStream}
+        remoteStream={call.remoteStream}
+        micOn={call.micOn}
+        cameraOn={call.cameraOn}
+        onAccept={call.acceptCall}
+        onReject={call.rejectCall}
+        onHangup={call.hangup}
+        onToggleMic={call.toggleMic}
+        onToggleCamera={call.toggleCamera}
+      />
     </div>
   );
 }

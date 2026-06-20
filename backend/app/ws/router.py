@@ -21,6 +21,7 @@ from app.models import Attachment, Message, Reaction, User
 from app.reactions import QUICK_REACTIONS
 from app.schemas import AttachmentOut
 from app.services.conversations import (
+    are_friends,
     get_conversation_for_member,
     get_other_member_ids,
     get_reaction_groups,
@@ -105,6 +106,8 @@ async def _handle_client_message(websocket: WebSocket, user: User, data: dict) -
         await _handle_delete(websocket, user, data)
     elif msg_type == "react":
         await _handle_react(websocket, user, data)
+    elif msg_type in _CALL_TYPES:
+        await _handle_call_signal(websocket, user, data)
     else:
         await websocket.send_json({"type": "error", "reason": "unknown_type"})
 
@@ -245,6 +248,38 @@ def _parse_uuid(value) -> uuid.UUID | None:
         return uuid.UUID(str(value))
     except (ValueError, TypeError):
         return None
+
+
+_CALL_TYPES = {"call_offer", "call_answer", "call_ice", "call_reject", "call_hangup"}
+
+
+async def _handle_call_signal(websocket: WebSocket, user: User, data: dict) -> None:
+    """1對1 通話訊號轉送：只在好友之間轉送 SDP / ICE，不解讀內容、不落庫。"""
+    msg_type = data["type"]
+    to_id = _parse_uuid(data.get("to_user_id"))
+    if to_id is None:
+        await websocket.send_json({"type": "error", "reason": "invalid_payload"})
+        return
+    async with db_module.SessionLocal() as db:
+        friends = await are_friends(db, user.id, to_id)
+    if not friends:
+        await websocket.send_json({"type": "error", "reason": "forbidden"})
+        return
+
+    payload: dict = {
+        "type": msg_type,
+        "from": {"id": str(user.id), "display_name": user.display_name},
+    }
+    if msg_type in ("call_offer", "call_answer"):
+        payload["sdp"] = data.get("sdp")
+    elif msg_type == "call_ice":
+        payload["candidate"] = data.get("candidate")
+
+    if manager.is_online(to_id):
+        await manager.send_to_user(to_id, payload)
+    elif msg_type == "call_offer":
+        # 只有撥號（offer）需要回報對方不在線；其餘類型對端已離開，靜默丟棄。
+        await websocket.send_json({"type": "call_unavailable", "to_user_id": str(to_id)})
 
 
 async def _handle_edit(websocket, user, data):

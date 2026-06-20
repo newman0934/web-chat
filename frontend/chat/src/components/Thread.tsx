@@ -22,6 +22,7 @@ interface ThreadProps {
   onEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
   onReact: (id: string, emoji: string) => void;
+  onStartCall?: () => void;
 }
 
 /** 右側對話視窗：訊息列表、載入更多、輸入框與送出。 */
@@ -40,6 +41,7 @@ export function Thread({
   onEdit,
   onDelete,
   onReact,
+  onStartCall,
 }: ThreadProps) {
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<Attachment | null>(null);
@@ -74,8 +76,18 @@ export function Thread({
 
   return (
     <section className="flex h-full flex-1 flex-col bg-slate-50">
-      <header className="border-b border-slate-200 bg-white px-6 py-4">
+      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
         <h2 className="font-semibold text-slate-800">{title}</h2>
+        {onStartCall && (
+          <button
+            type="button"
+            aria-label="視訊通話"
+            onClick={onStartCall}
+            className="rounded-lg px-3 py-1 text-lg hover:bg-slate-100"
+          >
+            📞
+          </button>
+        )}
       </header>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-6 py-4">
