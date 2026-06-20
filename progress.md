@@ -6,8 +6,16 @@
 
 ## 一句話現況
 
-MVP + **群組聊天** + **圖片/檔案附件**（皆最小可用）已實作完成、前後端測試全綠、瀏覽器端到端 demo 跑過成功。
-群組功能在 `feat/group-chat`；附件功能在 `feat/file-attachments`（從 group-chat 切出，含 zustand 重構）。皆採 subagent-driven 逐 task 完成並 review。
+MVP + **群組聊天** + **圖片/檔案附件** + **訊息編輯/刪除/表情回應**（皆最小可用）已實作完成、前後端測試全綠。
+群組功能在 `feat/group-chat`；附件功能已併入 group-chat；訊息動作在 `feat/message-actions`（從 group-chat 切出）。皆採 subagent-driven 逐 task 完成並 review。
+
+## 訊息編輯/刪除/表情（2026-06-20 完成，feat/message-actions 分支）
+
+- 走 WebSocket：client `edit`/`delete`/`react` → server 廣播統一 `message_updated`（完整訊息）給對話所有在線成員（含操作者）。見 [訊息動作設計](docs/superpowers/specs/2026-06-20-message-actions-design.md)。
+- 編輯（限本人、標記 edited_at）、軟刪除（佔位「此訊息已刪除」、遮蔽 content/附件/表情）、表情（固定 6 emoji 白名單、任何成員 toggle、`{emoji,count,user_ids}` 觀看者無關形狀，前端自算「我按過沒」）。
+- 後端 pytest 54 passed；前端 chat vitest 28、tsc 乾淨。最終全分支 review：Ready to merge。
+- 已修 Minor：編輯/刪除鈕僅在訊息 sent 後顯示（樂觀訊息不顯示）。
+- 尚未跑瀏覽器 E2E（自動化測試已涵蓋；本功能 E2E 為選配）。
 
 ## 圖片與檔案附件（2026-06-20 完成，feat/file-attachments 分支）
 

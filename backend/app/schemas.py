@@ -60,6 +60,12 @@ class AttachmentOut(BaseModel):
 
 
 # ---- conversations / messages ----
+class ReactionGroupOut(BaseModel):
+    emoji: str
+    count: int
+    user_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -70,6 +76,9 @@ class MessageOut(BaseModel):
     created_at: datetime
     read_count: int = 0  # 讀過此則的人數（排除寄件人）
     attachment: AttachmentOut | None = None
+    edited_at: datetime | None = None
+    deleted: bool = False
+    reactions: list[ReactionGroupOut] = Field(default_factory=list)
 
 
 class GroupCreateRequest(BaseModel):

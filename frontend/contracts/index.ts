@@ -44,6 +44,14 @@ export interface Attachment {
   is_image: boolean;
 }
 
+export interface ReactionGroup {
+  emoji: string;
+  count: number;
+  user_ids: string[];
+}
+
+export const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -52,6 +60,9 @@ export interface Message {
   created_at: string;
   read_count: number;
   attachment: Attachment | null;
+  edited_at: string | null;
+  deleted: boolean;
+  reactions: ReactionGroup[];
 }
 
 export type AttachmentOut = Attachment;
@@ -76,11 +87,15 @@ export interface GroupCreateRequest {
 export type ClientWsMessage =
   | { type: 'message'; conversation_id: string; content: string; temp_id: string; attachment_id?: string }
   | { type: 'read'; conversation_id: string }
-  | { type: 'typing'; conversation_id: string };
+  | { type: 'typing'; conversation_id: string }
+  | { type: 'edit'; message_id: string; content: string }
+  | { type: 'delete'; message_id: string }
+  | { type: 'react'; message_id: string; emoji: string };
 
 export type ServerWsMessage =
   | { type: 'ack'; temp_id: string; message: Message }
   | { type: 'message'; message: Message }
   | { type: 'read'; conversation_id: string; reader_id: string; message_ids: string[] }
   | { type: 'typing'; conversation_id: string; user_id: string }
-  | { type: 'error'; reason: string; temp_id?: string };
+  | { type: 'error'; reason: string; temp_id?: string }
+  | { type: 'message_updated'; message: Message };

@@ -1,46 +1,58 @@
 """WebSocket 端點 `/ws`：即時收發訊息、已讀回執、輸入中狀態。
 
 協定（與前端 frontend/contracts 對齊）：
-  Client→Server: {type:"message"|"read"|"typing", ...}
-  Server→Client: {type:"ack"|"message"|"read"|"typing"|"error", ...}
+  Client→Server: {type:"message"|"read"|"typing"|"edit"|"delete"|"react", ...}
+  Server→Client: {type:"ack"|"message"|"message_updated"|"read"|"typing"|"error", ...}
 
 刻意用 `db_module.SessionLocal()`（而非 get_db 依賴）建立 session，
 讓測試能 monkeypatch `app.db.SessionLocal` 換成測試用的 factory。
 """
 
 import uuid
-from datetime import timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import db as db_module
 from app.auth.security import decode_access_token
-from app.models import Attachment, Message, User
+from app.models import Attachment, Message, Reaction, User
+from app.reactions import QUICK_REACTIONS
 from app.schemas import AttachmentOut
 from app.services.conversations import (
     get_conversation_for_member,
     get_other_member_ids,
+    get_reaction_groups,
     mark_read,
+    read_count as read_count_fn,
 )
 from app.ws.manager import manager
 
 router = APIRouter()
 
 
-def _serialize_message(msg: Message, read_count: int = 0, attachment=None) -> dict:
+async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
+    deleted = msg.deleted_at is not None
+    attachment = None
+    if not deleted:
+        att_res = await db.execute(select(Attachment).where(Attachment.message_id == msg.id))
+        attachment = att_res.scalar_one_or_none()
+    groups = [] if deleted else await get_reaction_groups(db, msg.id)
     return {
         "id": str(msg.id),
         "conversation_id": str(msg.conversation_id),
         "sender_id": str(msg.sender_id),
-        "content": msg.content,
+        "content": "" if deleted else msg.content,
         "created_at": msg.created_at.astimezone(timezone.utc).isoformat(),
         "read_count": read_count,
         "attachment": (
             AttachmentOut.model_validate(attachment).model_dump(mode="json")
-            if attachment
-            else None
+            if attachment else None
         ),
+        "edited_at": msg.edited_at.astimezone(timezone.utc).isoformat() if msg.edited_at else None,
+        "deleted": deleted,
+        "reactions": [g.model_dump(mode="json") for g in groups],
     }
 
 
@@ -87,6 +99,12 @@ async def _handle_client_message(websocket: WebSocket, user: User, data: dict) -
         await _handle_read(websocket, user, data)
     elif msg_type == "typing":
         await _handle_typing(user, data)
+    elif msg_type == "edit":
+        await _handle_edit(websocket, user, data)
+    elif msg_type == "delete":
+        await _handle_delete(websocket, user, data)
+    elif msg_type == "react":
+        await _handle_react(websocket, user, data)
     else:
         await websocket.send_json({"type": "error", "reason": "unknown_type"})
 
@@ -155,7 +173,7 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
             )
             return
 
-        payload = _serialize_message(message, attachment=attachment)
+        payload = await _serialize_message(db, message)
         recipients = await get_other_member_ids(db, conv_id, user.id)
 
     await websocket.send_json({"type": "ack", "temp_id": temp_id, "message": payload})
@@ -211,3 +229,87 @@ async def _handle_typing(user: User, data: dict) -> None:
                 rid,
                 {"type": "typing", "conversation_id": str(conv_id), "user_id": str(user.id)},
             )
+
+
+async def _broadcast_updated(db, conv_id, actor_id, message: Message) -> None:
+    payload = await _serialize_message(db, message, read_count=await read_count_fn(db, message.id))
+    recipients = await get_other_member_ids(db, conv_id, actor_id)
+    # 含操作者本人（多裝置同步）
+    for rid in [actor_id, *recipients]:
+        if manager.is_online(rid):
+            await manager.send_to_user(rid, {"type": "message_updated", "message": payload})
+
+
+def _parse_uuid(value) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, TypeError):
+        return None
+
+
+async def _handle_edit(websocket, user, data):
+    mid = _parse_uuid(data.get("message_id"))
+    content = (data.get("content") or "").strip()
+    if mid is None or not content:
+        await websocket.send_json({"type": "error", "reason": "invalid_payload"})
+        return
+    async with db_module.SessionLocal() as db:
+        msg = await db.get(Message, mid)
+        if msg is None or msg.sender_id != user.id or msg.deleted_at is not None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+        msg.content = content
+        msg.edited_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(msg)
+        await _broadcast_updated(db, msg.conversation_id, user.id, msg)
+
+
+async def _handle_delete(websocket, user, data):
+    mid = _parse_uuid(data.get("message_id"))
+    if mid is None:
+        await websocket.send_json({"type": "error", "reason": "invalid_payload"})
+        return
+    async with db_module.SessionLocal() as db:
+        msg = await db.get(Message, mid)
+        if msg is None or msg.sender_id != user.id:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+        if msg.deleted_at is None:
+            msg.deleted_at = datetime.now(timezone.utc)
+            msg.content = ""
+            await db.commit()
+            await db.refresh(msg)
+        await _broadcast_updated(db, msg.conversation_id, user.id, msg)
+
+
+async def _handle_react(websocket, user, data):
+    mid = _parse_uuid(data.get("message_id"))
+    emoji = data.get("emoji")
+    if mid is None or emoji not in QUICK_REACTIONS:
+        await websocket.send_json({"type": "error", "reason": "invalid_reaction"})
+        return
+    async with db_module.SessionLocal() as db:
+        msg = await db.get(Message, mid)
+        if msg is None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+        conv = await get_conversation_for_member(db, msg.conversation_id, user.id)
+        if conv is None or msg.deleted_at is not None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+        existing = await db.execute(
+            select(Reaction).where(
+                Reaction.message_id == mid,
+                Reaction.user_id == user.id,
+                Reaction.emoji == emoji,
+            )
+        )
+        row = existing.scalar_one_or_none()
+        if row is None:
+            db.add(Reaction(message_id=mid, user_id=user.id, emoji=emoji))
+        else:
+            await db.execute(sa_delete(Reaction).where(Reaction.id == row.id))
+        await db.commit()
+        await db.refresh(msg)
+        await _broadcast_updated(db, msg.conversation_id, user.id, msg)

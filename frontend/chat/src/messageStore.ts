@@ -28,6 +28,9 @@ export function makeOptimistic(
     created_at: new Date().toISOString(),
     read_count: 0,
     attachment,
+    edited_at: null,
+    deleted: false,
+    reactions: [],
     temp_id: tempId,
     status: 'sending',
   };
@@ -97,5 +100,16 @@ export function applyReadReceipt(
   const ids = new Set(messageIds);
   return list.map((m) =>
     ids.has(m.id) ? { ...m, read_count: m.read_count + 1 } : m,
+  );
+}
+
+/** 收到 message_updated：依 id 取代該則（保留 sent 狀態）；找不到則不動。 */
+export function applyMessageUpdate(
+  list: ChatMessage[],
+  message: Message,
+): ChatMessage[] {
+  if (!list.some((m) => m.id === message.id)) return list;
+  return list.map((m) =>
+    m.id === message.id ? { ...message, status: 'sent' as const } : m,
   );
 }

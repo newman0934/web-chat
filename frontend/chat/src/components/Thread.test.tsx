@@ -14,6 +14,9 @@ function msg(over: Partial<ChatMessage>): ChatMessage {
     read_count: 0,
     status: 'sent',
     attachment: null,
+    edited_at: null,
+    deleted: false,
+    reactions: [],
     ...over,
   };
 }
@@ -31,6 +34,9 @@ describe('Thread', () => {
         onLoadMore={vi.fn()}
         onSend={vi.fn()}
         onRetry={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onReact={vi.fn()}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
         onUpload={vi.fn()}
       />,
@@ -51,6 +57,9 @@ describe('Thread', () => {
         onLoadMore={vi.fn()}
         onSend={vi.fn()}
         onRetry={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onReact={vi.fn()}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
         onUpload={vi.fn()}
       />,
@@ -71,6 +80,9 @@ describe('Thread', () => {
         onLoadMore={vi.fn()}
         onSend={vi.fn()}
         onRetry={onRetry}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onReact={vi.fn()}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
         onUpload={vi.fn()}
       />,
@@ -92,6 +104,9 @@ describe('Thread', () => {
         onLoadMore={vi.fn()}
         onSend={onSend}
         onRetry={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onReact={vi.fn()}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
         onUpload={vi.fn()}
       />,
@@ -113,6 +128,7 @@ describe('Thread', () => {
         ]}
         currentUserId="me" canLoadMore={false}
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+        onEdit={vi.fn()} onDelete={vi.fn()} onReact={vi.fn()}
         attachmentUrl={(id) => 'http://api/attachments/' + id}
         onUpload={vi.fn()}
       />,
@@ -132,6 +148,7 @@ describe('Thread', () => {
         ]}
         currentUserId="me" canLoadMore={false}
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+        onEdit={vi.fn()} onDelete={vi.fn()} onReact={vi.fn()}
         onUpload={vi.fn()}
       />,
     );
@@ -141,5 +158,49 @@ describe('Thread', () => {
     expect(imgLink).toHaveAttribute('href', 'http://api/attachments/img1');
     const link = screen.getByRole('link', { name: /r\.pdf/ });
     expect(link).toHaveAttribute('href', 'http://api/attachments/doc1');
+  });
+
+  it('已編輯顯示標記、已刪除顯示佔位', () => {
+    render(
+      <Thread title="Bob" isGroup={false} memberNames={{}}
+        attachmentUrl={(id) => id}
+        messages={[
+          msg({ id: 'm1', content: 'hi', edited_at: '2026-06-20T00:00:00Z' }),
+          msg({ id: 'm2', deleted: true, content: '' }),
+        ]}
+        currentUserId="me" canLoadMore={false}
+        onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+        onEdit={vi.fn()} onDelete={vi.fn()} onReact={vi.fn()} onUpload={vi.fn()} />,
+    );
+    expect(screen.getByText('已編輯')).toBeInTheDocument();
+    expect(screen.getByText('此訊息已刪除')).toBeInTheDocument();
+  });
+
+  it('表情 chip 高亮並可 toggle', () => {
+    const onReact = vi.fn();
+    render(
+      <Thread title="Bob" isGroup={false} memberNames={{}}
+        attachmentUrl={(id) => id}
+        messages={[msg({ id: 'm1', reactions: [{ emoji: '👍', count: 1, user_ids: ['me'] }] })]}
+        currentUserId="me" canLoadMore={false}
+        onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+        onEdit={vi.fn()} onDelete={vi.fn()} onReact={onReact} onUpload={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /👍 1/ }));
+    expect(onReact).toHaveBeenCalledWith('m1', '👍');
+  });
+
+  it('自己的訊息可刪除', () => {
+    const onDelete = vi.fn();
+    render(
+      <Thread title="Bob" isGroup={false} memberNames={{}}
+        attachmentUrl={(id) => id}
+        messages={[msg({ id: 'm1', sender_id: 'me', content: 'mine' })]}
+        currentUserId="me" canLoadMore={false}
+        onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+        onEdit={vi.fn()} onDelete={onDelete} onReact={vi.fn()} onUpload={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '刪除' }));
+    expect(onDelete).toHaveBeenCalledWith('m1');
   });
 });

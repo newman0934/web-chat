@@ -95,6 +95,9 @@ export default function ChatApp({
         case 'error':
           if (msg.temp_id) st.failMessage(msg.temp_id);
           break;
+        case 'message_updated':
+          st.updateMessage(msg.message);
+          break;
         default:
           break;
       }
@@ -206,6 +209,16 @@ export default function ChatApp({
     if (!ok) useChatStore.getState().failMessage(tempId);
   }, []);
 
+  const editMessage = useCallback((id: string, content: string) => {
+    socketRef.current?.send({ type: 'edit', message_id: id, content });
+  }, []);
+  const deleteMessage = useCallback((id: string) => {
+    socketRef.current?.send({ type: 'delete', message_id: id });
+  }, []);
+  const toggleReaction = useCallback((id: string, emoji: string) => {
+    socketRef.current?.send({ type: 'react', message_id: id, emoji });
+  }, []);
+
   /** 加好友並刷新對話清單；回傳 null 表示成功，否則為錯誤訊息字串。 */
   const addContact = useCallback(
     async (email: string): Promise<string | null> => {
@@ -282,6 +295,9 @@ export default function ChatApp({
           onRetry={retry}
           attachmentUrl={attachmentUrl}
           onUpload={onUpload}
+          onEdit={editMessage}
+          onDelete={deleteMessage}
+          onReact={toggleReaction}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center text-slate-400">

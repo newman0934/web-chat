@@ -16,6 +16,7 @@ from app.services.conversations import (
     get_attachment_for_message,
     get_conversation_for_member,
     get_member_ids,
+    get_reaction_groups,
     read_count,
     unread_count,
 )
@@ -121,13 +122,18 @@ async def list_messages(
     messages.reverse()
     out = []
     for m in messages:
-        att = await get_attachment_for_message(db, m.id)
+        deleted = m.deleted_at is not None
+        att = None if deleted else await get_attachment_for_message(db, m.id)
+        groups = [] if deleted else await get_reaction_groups(db, m.id)
         out.append(
             MessageOut(
                 id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
-                content=m.content, created_at=m.created_at,
+                content="" if deleted else m.content, created_at=m.created_at,
                 read_count=await read_count(db, m.id),
                 attachment=AttachmentOut.model_validate(att) if att else None,
+                edited_at=m.edited_at,
+                deleted=deleted,
+                reactions=groups,
             )
         )
     return out
