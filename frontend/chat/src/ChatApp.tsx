@@ -1,29 +1,20 @@
 // chat remote 對外暴露的主元件（由 shell 以 props 傳入 token / currentUser 等）。
-// 職責：組裝 Sidebar + Thread，串接 REST（ApiClient）與 WebSocket（useChatSocket），
-// 並以 messageStore 的純函式維護每個對話的訊息清單（含樂觀更新）。
+// 職責：組裝 Sidebar + Thread，串接 REST（ApiClient）與 WebSocket（useChatSocket）。
+// 狀態集中在 zustand（useChatStore）；本元件只負責副作用（fetch / ws.send）與把 store 接到 UI。
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
-import type { ChatAppProps, Contact, Conversation, ServerWsMessage } from '../../contracts';
+import type { ChatAppProps, ServerWsMessage } from '../../contracts';
 import { ApiClient, ApiError, UnauthorizedError } from './api';
 import { Sidebar } from './components/Sidebar';
 import { Thread } from './components/Thread';
-import {
-  addIncoming,
-  addOptimistic,
-  applyReadReceipt,
-  fromHistory,
-  makeOptimistic,
-  markFailed,
-  prependHistory,
-  reconcileAck,
-  type ChatMessage,
-} from './messageStore';
+import { makeOptimistic } from './messageStore';
+import { useChatStore } from './store';
 import { useChatSocket } from './useChatSocket';
 
 const PAGE_SIZE = 30;
 
-/** chat remote 主元件：串 REST + WebSocket，管理對話與訊息狀態。 */
+/** chat remote 主元件：串 REST + WebSocket，狀態由 useChatStore 管理。 */
 export default function ChatApp({
   token,
   currentUser,
@@ -36,79 +27,74 @@ export default function ChatApp({
     [apiBaseUrl, token],
   );
 
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
-  const [hasMore, setHasMore] = useState<Record<string, boolean>>({});
-  const [contacts, setContacts] = useState<Contact[]>([]);
-
-  const activeIdRef = useRef<string | null>(null);
-  activeIdRef.current = activeId;
+  // 從 store 訂閱要渲染的狀態；actions 為穩定參考，於 callback 內以 getState() 取用。
+  const conversations = useChatStore((s) => s.conversations);
+  const activeId = useChatStore((s) => s.activeId);
+  const messages = useChatStore((s) => s.messages);
+  const hasMore = useChatStore((s) => s.hasMore);
+  const contacts = useChatStore((s) => s.contacts);
 
   /** 從後端拉對話清單；401 時觸發登出。 */
   const loadConversations = useCallback(async () => {
     try {
-      setConversations(await api.listConversations());
+      useChatStore.getState().setConversations(await api.listConversations());
     } catch (err) {
       if (err instanceof UnauthorizedError) onLogout();
     }
   }, [api, onLogout]);
 
+  // 切換 token（登入/換人）時重置 store，避免殘留上一位使用者的資料，再載入清單與好友。
   useEffect(() => {
+    useChatStore.getState().reset();
     void loadConversations();
-    void api.listContacts().then(setContacts).catch(() => {});
+    void api
+      .listContacts()
+      .then((c) => useChatStore.getState().setContacts(c))
+      .catch(() => {});
   }, [loadConversations, api]);
+
+  // ---- 訊息載入 ----
+  /** 載入（或重載）指定對話最近一頁歷史訊息。 */
+  const refreshMessages = useCallback(
+    async (conversationId: string) => {
+      try {
+        const history = await api.listMessages(conversationId, { limit: PAGE_SIZE });
+        const st = useChatStore.getState();
+        st.loadHistory(conversationId, history);
+        st.setHasMore(conversationId, history.length === PAGE_SIZE);
+      } catch (err) {
+        if (err instanceof UnauthorizedError) onLogout();
+      }
+    },
+    [api, onLogout],
+  );
 
   // ---- WebSocket ----
   /** 分派 WebSocket 推播：ACK 對齊、新訊息、已讀、送訊失敗。 */
   const handleServerMessage = useCallback(
     (msg: ServerWsMessage) => {
+      const st = useChatStore.getState();
       switch (msg.type) {
-        case 'ack': {
-          const convId = msg.message.conversation_id;
-          setMessages((prev) => ({
-            ...prev,
-            [convId]: reconcileAck(prev[convId] ?? [], msg.temp_id, msg.message),
-          }));
+        case 'ack':
+          st.ackMessage(msg.temp_id, msg.message);
           break;
-        }
-        case 'message': {
-          const convId = msg.message.conversation_id;
-          setMessages((prev) => ({
-            ...prev,
-            [convId]: addIncoming(prev[convId] ?? [], msg.message),
-          }));
-          if (activeIdRef.current === convId) {
-            socketRef.current?.send({ type: 'read', conversation_id: convId });
+        case 'message':
+          st.receiveMessage(msg.message);
+          // 若正開著該對話，立刻回報已讀。
+          if (st.activeId === msg.message.conversation_id) {
+            socketRef.current?.send({
+              type: 'read',
+              conversation_id: msg.message.conversation_id,
+            });
           }
           void loadConversations();
           break;
-        }
-        case 'read': {
-          setMessages((prev) => {
-            const list = prev[msg.conversation_id];
-            if (!list) return prev;
-            return {
-              ...prev,
-              [msg.conversation_id]: applyReadReceipt(list, msg.message_ids),
-            };
-          });
+        case 'read':
+          st.markRead(msg.conversation_id, msg.message_ids);
           break;
-        }
-        case 'error': {
-          if (msg.temp_id) {
-            setMessages((prev) => {
-              const next = { ...prev };
-              for (const [cid, list] of Object.entries(next)) {
-                if (list.some((m) => m.temp_id === msg.temp_id)) {
-                  next[cid] = markFailed(list, msg.temp_id!);
-                }
-              }
-              return next;
-            });
-          }
+        case 'error':
+          if (msg.temp_id) st.failMessage(msg.temp_id);
           break;
-        }
         default:
           break;
       }
@@ -121,7 +107,7 @@ export default function ChatApp({
     /** WS 重連後用 REST 補齊對話清單與目前對話訊息。 */
     onReconnected: () => {
       void loadConversations();
-      const active = activeIdRef.current;
+      const active = useChatStore.getState().activeId;
       if (active) void refreshMessages(active);
     },
     /** token 失效（WS 1008）時登出。 */
@@ -130,114 +116,76 @@ export default function ChatApp({
   const socketRef = useRef(socket);
   socketRef.current = socket;
 
-  // ---- 訊息載入 ----
-  /** 載入（或重載）指定對話最近一頁歷史訊息。 */
-  const refreshMessages = useCallback(
-    async (conversationId: string) => {
-      try {
-        const history = await api.listMessages(conversationId, { limit: PAGE_SIZE });
-        setMessages((prev) => ({ ...prev, [conversationId]: fromHistory(history) }));
-        setHasMore((prev) => ({ ...prev, [conversationId]: history.length === PAGE_SIZE }));
-      } catch (err) {
-        if (err instanceof UnauthorizedError) onLogout();
-      }
-    },
-    [api, onLogout],
-  );
-
   /** 切換對話：必要時拉歷史、送 read 事件、清本地未讀數。 */
   const selectConversation = useCallback(
     async (conversationId: string) => {
-      setActiveId(conversationId);
-      if (!messages[conversationId]) {
+      const st = useChatStore.getState();
+      st.setActiveId(conversationId);
+      if (!st.hasMessages(conversationId)) {
         await refreshMessages(conversationId);
       }
       socketRef.current?.send({ type: 'read', conversation_id: conversationId });
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === conversationId ? { ...c, unread_count: 0 } : c,
-        ),
-      );
+      useChatStore.getState().clearUnread(conversationId);
     },
-    [messages, refreshMessages],
+    [refreshMessages],
   );
 
   /** 向上分頁：以最早訊息的 created_at 為游標載入更早訊息。 */
   const loadMore = useCallback(async () => {
-    if (!activeId) return;
-    const list = messages[activeId] ?? [];
-    const oldest = list[0];
+    const st = useChatStore.getState();
+    const active = st.activeId;
+    if (!active) return;
+    const oldest = (st.messages[active] ?? [])[0];
     if (!oldest) return;
     try {
-      const older = await api.listMessages(activeId, {
+      const older = await api.listMessages(active, {
         before: oldest.created_at,
         limit: PAGE_SIZE,
       });
-      setMessages((prev) => ({
-        ...prev,
-        [activeId]: prependHistory(prev[activeId] ?? [], older),
-      }));
-      setHasMore((prev) => ({ ...prev, [activeId]: older.length === PAGE_SIZE }));
+      const s2 = useChatStore.getState();
+      s2.loadOlder(active, older);
+      s2.setHasMore(active, older.length === PAGE_SIZE);
     } catch (err) {
       if (err instanceof UnauthorizedError) onLogout();
     }
-  }, [activeId, messages, api, onLogout]);
+  }, [api, onLogout]);
 
   // ---- 送訊息（樂觀更新） ----
   /** 樂觀送出訊息：先插入 UI，再經 WS 送出；連線不可用則標 failed。 */
   const sendMessage = useCallback(
     (content: string) => {
-      if (!activeId) return;
+      const st = useChatStore.getState();
+      const active = st.activeId;
+      if (!active) return;
       const tempId = crypto.randomUUID();
-      const optimistic = makeOptimistic(activeId, currentUser.id, content, tempId);
-      setMessages((prev) => ({
-        ...prev,
-        [activeId]: addOptimistic(prev[activeId] ?? [], optimistic),
-      }));
+      st.appendOptimistic(active, makeOptimistic(active, currentUser.id, content, tempId));
       const ok = socketRef.current?.send({
         type: 'message',
-        conversation_id: activeId,
+        conversation_id: active,
         content,
         temp_id: tempId,
       });
-      if (!ok) {
-        setMessages((prev) => ({
-          ...prev,
-          [activeId]: markFailed(prev[activeId] ?? [], tempId),
-        }));
-      }
+      if (!ok) useChatStore.getState().failMessage(tempId);
     },
-    [activeId, currentUser.id],
+    [currentUser.id],
   );
 
   /** 重送 failed 訊息：沿用原 temp_id 以便 ACK 對齊。 */
-  const retry = useCallback(
-    (tempId: string) => {
-      if (!activeId) return;
-      const list = messages[activeId] ?? [];
-      const failed = list.find((m) => m.temp_id === tempId);
-      if (!failed) return;
-      setMessages((prev) => ({
-        ...prev,
-        [activeId]: (prev[activeId] ?? []).map((m) =>
-          m.temp_id === tempId ? { ...m, status: 'sending' } : m,
-        ),
-      }));
-      const ok = socketRef.current?.send({
-        type: 'message',
-        conversation_id: activeId,
-        content: failed.content,
-        temp_id: tempId,
-      });
-      if (!ok) {
-        setMessages((prev) => ({
-          ...prev,
-          [activeId]: markFailed(prev[activeId] ?? [], tempId),
-        }));
-      }
-    },
-    [activeId, messages],
-  );
+  const retry = useCallback((tempId: string) => {
+    const st = useChatStore.getState();
+    const active = st.activeId;
+    if (!active) return;
+    const failed = (st.messages[active] ?? []).find((m) => m.temp_id === tempId);
+    if (!failed) return;
+    st.resendMessage(active, tempId);
+    const ok = socketRef.current?.send({
+      type: 'message',
+      conversation_id: active,
+      content: failed.content,
+      temp_id: tempId,
+    });
+    if (!ok) useChatStore.getState().failMessage(tempId);
+  }, []);
 
   /** 加好友並刷新對話清單；回傳 null 表示成功，否則為錯誤訊息字串。 */
   const addContact = useCallback(
@@ -264,10 +212,13 @@ export default function ChatApp({
       try {
         const conv = await api.createGroup(name, memberIds);
         await loadConversations();
-        setActiveId(conv.id);
+        useChatStore.getState().setActiveId(conv.id);
         return null;
       } catch (err) {
-        if (err instanceof UnauthorizedError) { onLogout(); return '憑證失效'; }
+        if (err instanceof UnauthorizedError) {
+          onLogout();
+          return '憑證失效';
+        }
         if (err instanceof ApiError) return err.message;
         return '建立群組失敗';
       }
@@ -281,7 +232,9 @@ export default function ChatApp({
     (activeConv?.members ?? []).map((m) => [m.id, m.display_name]),
   );
   const title = activeConv
-    ? (activeConv.type === 'group' ? activeConv.name ?? '群組' : activeConv.other_user?.display_name ?? '')
+    ? activeConv.type === 'group'
+      ? activeConv.name ?? '群組'
+      : activeConv.other_user?.display_name ?? ''
     : '';
 
   return (
