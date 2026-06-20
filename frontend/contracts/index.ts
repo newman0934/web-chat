@@ -84,13 +84,23 @@ export interface GroupCreateRequest {
 
 // ---- WebSocket 訊息協定 ----
 
+export interface CallFrom {
+  id: string;
+  display_name: string;
+}
+
 export type ClientWsMessage =
   | { type: 'message'; conversation_id: string; content: string; temp_id: string; attachment_id?: string }
   | { type: 'read'; conversation_id: string }
   | { type: 'typing'; conversation_id: string }
   | { type: 'edit'; message_id: string; content: string }
   | { type: 'delete'; message_id: string }
-  | { type: 'react'; message_id: string; emoji: string };
+  | { type: 'react'; message_id: string; emoji: string }
+  | { type: 'call_offer'; to_user_id: string; sdp: RTCSessionDescriptionInit }
+  | { type: 'call_answer'; to_user_id: string; sdp: RTCSessionDescriptionInit }
+  | { type: 'call_ice'; to_user_id: string; candidate: RTCIceCandidateInit }
+  | { type: 'call_reject'; to_user_id: string }
+  | { type: 'call_hangup'; to_user_id: string };
 
 export type ServerWsMessage =
   | { type: 'ack'; temp_id: string; message: Message }
@@ -98,4 +108,10 @@ export type ServerWsMessage =
   | { type: 'read'; conversation_id: string; reader_id: string; message_ids: string[] }
   | { type: 'typing'; conversation_id: string; user_id: string }
   | { type: 'error'; reason: string; temp_id?: string }
-  | { type: 'message_updated'; message: Message };
+  | { type: 'message_updated'; message: Message }
+  | { type: 'call_offer'; from: CallFrom; sdp: RTCSessionDescriptionInit }
+  | { type: 'call_answer'; from: CallFrom; sdp: RTCSessionDescriptionInit }
+  | { type: 'call_ice'; from: CallFrom; candidate: RTCIceCandidateInit }
+  | { type: 'call_reject'; from: CallFrom }
+  | { type: 'call_hangup'; from: CallFrom }
+  | { type: 'call_unavailable'; to_user_id: string };
