@@ -141,11 +141,12 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
         message = Message(conversation_id=conv_id, sender_id=user.id, content=content)
         db.add(message)
         try:
+            await db.flush()  # 取得 message.id，尚未 commit
+            if attachment is not None:
+                attachment.message_id = message.id
             await db.commit()
             await db.refresh(message)
             if attachment is not None:
-                attachment.message_id = message.id
-                await db.commit()
                 await db.refresh(attachment)
         except Exception:
             await db.rollback()
