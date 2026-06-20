@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import db as db_module
 from app.auth.security import decode_access_token
-from app.models import Message, User
+from app.models import Attachment, Message, User
+from app.schemas import AttachmentOut
 from app.services.conversations import (
     get_conversation_for_member,
     get_other_member_ids,
@@ -27,7 +28,7 @@ from app.ws.manager import manager
 router = APIRouter()
 
 
-def _serialize_message(msg: Message, read_count: int = 0) -> dict:
+def _serialize_message(msg: Message, read_count: int = 0, attachment=None) -> dict:
     return {
         "id": str(msg.id),
         "conversation_id": str(msg.conversation_id),
@@ -35,6 +36,11 @@ def _serialize_message(msg: Message, read_count: int = 0) -> dict:
         "content": msg.content,
         "created_at": msg.created_at.astimezone(timezone.utc).isoformat(),
         "read_count": read_count,
+        "attachment": (
+            AttachmentOut.model_validate(attachment).model_dump(mode="json")
+            if attachment
+            else None
+        ),
     }
 
 
@@ -89,8 +95,9 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
     conv_id_raw = data.get("conversation_id")
     content = (data.get("content") or "").strip()
     temp_id = data.get("temp_id")
+    attachment_id_raw = data.get("attachment_id")
 
-    if not conv_id_raw or not content:
+    if not conv_id_raw or (not content and not attachment_id_raw):
         await websocket.send_json(
             {"type": "error", "reason": "invalid_payload", "temp_id": temp_id}
         )
@@ -110,18 +117,44 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
                 {"type": "error", "reason": "forbidden", "temp_id": temp_id}
             )
             return
+
+        attachment = None
+        if attachment_id_raw:
+            try:
+                att_id = uuid.UUID(str(attachment_id_raw))
+            except ValueError:
+                await websocket.send_json(
+                    {"type": "error", "reason": "invalid_attachment", "temp_id": temp_id}
+                )
+                return
+            attachment = await db.get(Attachment, att_id)
+            if (
+                attachment is None
+                or attachment.uploader_id != user.id
+                or attachment.message_id is not None
+            ):
+                await websocket.send_json(
+                    {"type": "error", "reason": "invalid_attachment", "temp_id": temp_id}
+                )
+                return
+
         message = Message(conversation_id=conv_id, sender_id=user.id, content=content)
         db.add(message)
         try:
             await db.commit()
             await db.refresh(message)
+            if attachment is not None:
+                attachment.message_id = message.id
+                await db.commit()
+                await db.refresh(attachment)
         except Exception:
             await db.rollback()
             await websocket.send_json(
                 {"type": "error", "reason": "db_error", "temp_id": temp_id}
             )
             return
-        payload = _serialize_message(message)
+
+        payload = _serialize_message(message, attachment=attachment)
         recipients = await get_other_member_ids(db, conv_id, user.id)
 
     await websocket.send_json({"type": "ack", "temp_id": temp_id, "message": payload})
