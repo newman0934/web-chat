@@ -83,6 +83,11 @@ class MessageOut(BaseModel):
     kind: str = "user"
 
 
+class MessageVersionOut(BaseModel):
+    content: str
+    created_at: datetime
+
+
 class GroupCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     member_user_ids: list[uuid.UUID] = Field(default_factory=list)
