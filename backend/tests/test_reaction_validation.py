@@ -7,8 +7,6 @@ from app.main import app
 from app.message_policy import is_valid_reaction_emoji
 from app.models import Message
 
-pytestmark = pytest.mark.asyncio
-
 
 def test_is_valid_reaction_emoji_unit():
     assert is_valid_reaction_emoji("🎉") is True
@@ -35,6 +33,7 @@ async def _pair_with_message(client, register_user, auth_headers, session_factor
     return alice, bob, conv["id"], mid
 
 
+@pytest.mark.asyncio
 async def test_react_arbitrary_emoji_accepted(client, register_user, auth_headers, session_factory):
     alice, bob, conv_id, mid = await _pair_with_message(client, register_user, auth_headers, session_factory)
     with TestClient(app) as tc:
@@ -45,6 +44,7 @@ async def test_react_arbitrary_emoji_accepted(client, register_user, auth_header
             assert evt["message"]["reactions"][0]["emoji"] == "🎉"
 
 
+@pytest.mark.asyncio
 async def test_react_text_rejected(client, register_user, auth_headers, session_factory):
     alice, bob, conv_id, mid = await _pair_with_message(client, register_user, auth_headers, session_factory)
     with TestClient(app) as tc:
