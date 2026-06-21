@@ -17,7 +17,7 @@ def test_is_valid_reaction_emoji_unit():
     assert is_valid_reaction_emoji("a") is False
     assert is_valid_reaction_emoji("") is False
     assert is_valid_reaction_emoji("   ") is False
-    assert is_valid_reaction_emoji("🎉🎉🎉🎉🎉") is False  # 超過 8 字元
+    assert is_valid_reaction_emoji("🎉🎉🎉🎉🎉🎉🎉🎉🎉") is False  # 9 codepoints > 8
     assert is_valid_reaction_emoji(None) is False
 
 

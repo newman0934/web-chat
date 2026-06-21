@@ -17,6 +17,6 @@ def is_valid_reaction_emoji(value) -> bool:
     if not isinstance(value, str):
         return False
     s = value.strip()
-    if not s or len(s) > 2:
+    if not s or len(s) > 8:
         return False
     return _DISALLOWED_IN_EMOJI.search(s) is None
