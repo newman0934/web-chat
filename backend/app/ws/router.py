@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import db as db_module
 from app.auth.security import decode_access_token
-from app.models import Attachment, Message, Reaction, User
+from app.message_policy import EDIT_WINDOW
+from app.models import Attachment, Message, MessageEdit, Reaction, User
 from app.reactions import QUICK_REACTIONS
 from app.schemas import AttachmentOut
 from app.services.conversations import (
@@ -251,6 +252,11 @@ def _parse_uuid(value) -> uuid.UUID | None:
         return None
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """把可能為 naive 的 datetime 視為 UTC，供時窗比較。"""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 _CALL_TYPES = {"call_offer", "call_answer", "call_ice", "call_reject", "call_hangup"}
 
 
@@ -294,8 +300,15 @@ async def _handle_edit(websocket, user, data):
         if msg is None or msg.sender_id != user.id or msg.deleted_at is not None:
             await websocket.send_json({"type": "error", "reason": "forbidden"})
             return
+        now = datetime.now(timezone.utc)
+        if now - _as_utc(msg.created_at) > EDIT_WINDOW:
+            await websocket.send_json({"type": "error", "reason": "edit_window_passed"})
+            return
+        # 快照目前版本（content + 它的生效時間）後再覆寫。
+        prev_at = msg.edited_at or msg.created_at
+        db.add(MessageEdit(message_id=msg.id, content=msg.content, created_at=prev_at))
         msg.content = content
-        msg.edited_at = datetime.now(timezone.utc)
+        msg.edited_at = now
         await db.commit()
         await db.refresh(msg)
         await _broadcast_updated(db, msg.conversation_id, user.id, msg)
