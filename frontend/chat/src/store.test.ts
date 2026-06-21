@@ -29,6 +29,7 @@ function conv(id: string, unread: number): Conversation {
     members: [],
     last_message: null,
     unread_count: unread,
+    roles: {},
   };
 }
 
