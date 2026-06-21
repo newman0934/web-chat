@@ -24,7 +24,9 @@ from app.services.conversations import (
     are_friends,
     build_forwarded_from,
     build_reply_preview,
+    get_attachment_for_message,
     get_conversation_for_member,
+    get_member_ids,
     get_other_member_ids,
     get_reaction_groups,
     mark_read,
@@ -135,6 +137,8 @@ async def _handle_client_message(websocket: WebSocket, user: User, data: dict) -
         await _handle_restore(websocket, user, data)
     elif msg_type == "react":
         await _handle_react(websocket, user, data)
+    elif msg_type == "forward":
+        await _handle_forward(websocket, user, data)
     elif msg_type in _CALL_TYPES:
         await _handle_call_signal(websocket, user, data)
     else:
@@ -406,6 +410,77 @@ async def _handle_restore(websocket, user, data):
         await db.commit()
         await db.refresh(msg)
         await _broadcast_updated(db, msg.conversation_id, user.id, msg)
+
+
+async def _handle_forward(websocket: WebSocket, user: User, data: dict) -> None:
+    """轉發訊息到目標對話：複製內容/附件、記原作者、廣播給目標成員（含發起人）。
+
+    協定：{type:"forward", message_id, to_conversation_id}
+    無 temp_id / ack；廣播以一般 {type:"message", message} 傳達。
+    """
+    msg_id = _parse_uuid(data.get("message_id"))
+    to_conv_id = _parse_uuid(data.get("to_conversation_id"))
+    if msg_id is None or to_conv_id is None:
+        await websocket.send_json({"type": "error", "reason": "invalid_payload"})
+        return
+
+    async with db_module.SessionLocal() as db:
+        # 1. 查原訊息
+        orig = await db.get(Message, msg_id)
+        if orig is None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+
+        # 2. 確認發起人是原訊息對話的成員（看得到才可轉）
+        src_conv = await get_conversation_for_member(db, orig.conversation_id, user.id)
+        if src_conv is None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+
+        # 3. 不能轉發已軟刪訊息
+        if orig.deleted_at is not None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+
+        # 4. 確認發起人是目標對話的成員
+        tgt_conv = await get_conversation_for_member(db, to_conv_id, user.id)
+        if tgt_conv is None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+
+        # 5. 建新訊息（不繼承 reply_to）
+        new_msg = Message(
+            conversation_id=to_conv_id,
+            sender_id=user.id,
+            content=orig.content,
+            forwarded_from_user_id=orig.sender_id,
+        )
+        db.add(new_msg)
+        await db.flush()  # 取得 new_msg.id
+
+        # 6. 若原訊息有附件，複製一列（共用 stored_name，不動磁碟檔）
+        att = await get_attachment_for_message(db, orig.id)
+        if att is not None:
+            db.add(Attachment(
+                message_id=new_msg.id,
+                uploader_id=user.id,
+                stored_name=att.stored_name,
+                original_name=att.original_name,
+                content_type=att.content_type,
+                size=att.size,
+                is_image=att.is_image,
+            ))
+
+        await db.commit()
+        await db.refresh(new_msg)
+
+        # 7. 序列化 & 廣播給目標對話所有在線成員（含發起人）
+        payload = await _serialize_message(db, new_msg)
+        member_ids = await get_member_ids(db, to_conv_id)
+
+    for uid in member_ids:
+        if manager.is_online(uid):
+            await manager.send_to_user(uid, {"type": "message", "message": payload})
 
 
 async def _handle_react(websocket, user, data):
