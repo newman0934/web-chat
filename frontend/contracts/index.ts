@@ -52,6 +52,15 @@ export interface ReactionGroup {
 
 export const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
+export interface MessageVersion {
+  content: string;
+  created_at: string;
+}
+
+/** 編輯 / 還原時窗（毫秒）；與後端各一份，前端只用來決定按鈕顯隱。 */
+export const EDIT_WINDOW_MS = 15 * 60 * 1000;
+export const RESTORE_WINDOW_MS = 5 * 60 * 1000;
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -62,6 +71,7 @@ export interface Message {
   attachment: Attachment | null;
   edited_at: string | null;
   deleted: boolean;
+  deleted_at?: string | null;
   reactions: ReactionGroup[];
   kind?: 'user' | 'system';
 }
@@ -97,6 +107,7 @@ export type ClientWsMessage =
   | { type: 'typing'; conversation_id: string }
   | { type: 'edit'; message_id: string; content: string }
   | { type: 'delete'; message_id: string }
+  | { type: 'restore'; message_id: string }
   | { type: 'react'; message_id: string; emoji: string }
   | { type: 'call_offer'; to_user_id: string; sdp: RTCSessionDescriptionInit }
   | { type: 'call_answer'; to_user_id: string; sdp: RTCSessionDescriptionInit }

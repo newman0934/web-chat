@@ -30,6 +30,7 @@ export function makeOptimistic(
     attachment,
     edited_at: null,
     deleted: false,
+    deleted_at: null,
     reactions: [],
     temp_id: tempId,
     status: 'sending',

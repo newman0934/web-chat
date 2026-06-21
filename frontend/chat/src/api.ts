@@ -1,7 +1,7 @@
 // chat remote 的 REST 客戶端：包裝 fetch，統一帶上 JWT 與錯誤處理。
 // 即時訊息走 WebSocket（見 useChatSocket.ts）；這裡只負責「非即時」的讀取與加好友。
 
-import type { Attachment, Contact, Conversation, GroupCreateRequest, Message } from '../../contracts';
+import type { Attachment, Contact, Conversation, GroupCreateRequest, Message, MessageVersion } from '../../contracts';
 
 export class ApiClient {
   /** @param baseUrl REST API 根路徑 @param token JWT，附在 Authorization header */
@@ -67,6 +67,11 @@ export class ApiClient {
     return this.req<Message[]>(
       `/conversations/${conversationId}/messages${qs ? `?${qs}` : ''}`,
     );
+  }
+
+  /** 取得某訊息的編輯歷史（由舊到新，最後一筆為目前版本）。 */
+  getMessageEdits(messageId: string) {
+    return this.req<MessageVersion[]>(`/messages/${messageId}/edits`);
   }
 
   /** 加成員（user_id 好友快選 或 email 加非好友）。回更新後的 Conversation。 */
