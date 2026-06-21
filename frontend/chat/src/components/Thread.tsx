@@ -7,7 +7,7 @@ import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
 import { EDIT_WINDOW_MS, QUICK_REACTIONS, RESTORE_WINDOW_MS } from '../../../contracts';
-import type { Attachment, MessageVersion } from '../../../contracts';
+import type { Attachment, MessageVersion, ReplyPreview } from '../../../contracts';
 import type { ChatMessage } from '../messageStore';
 import { EditHistoryPopover } from './EditHistoryPopover';
 
@@ -19,7 +19,7 @@ interface ThreadProps {
   currentUserId: string;
   canLoadMore: boolean;
   onLoadMore: () => void;
-  onSend: (content: string, attachmentId?: string) => void;
+  onSend: (content: string, attachmentId?: string, replyToMessageId?: string, replyPreview?: ReplyPreview | null) => void;
   onRetry: (tempId: string) => void;
   attachmentUrl: (id: string) => string;
   onUpload: (file: File) => Promise<Attachment | null>;
@@ -56,8 +56,11 @@ export function Thread({
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<Attachment | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  // Map from message id to DOM element ref, used for scroll-to-original.
+  const bubbleRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // 新訊息加入時自動捲到底部。
   useEffect(() => {
@@ -74,12 +77,32 @@ export function Thread({
     if (att) setPending(att);
   };
 
+  /** 捲動到指定訊息（若在清單內），否則 no-op。 */
+  const scrollToMessage = (messageId: string) => {
+    const el = bubbleRefs.current[messageId];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
   /** 送出輸入框內容並清空 draft。 */
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const content = draft.trim();
     if (!content && !pending) return;
-    onSend(content, pending?.id);
+    if (replyingTo) {
+      const preview: ReplyPreview = {
+        id: replyingTo.id,
+        sender_id: replyingTo.sender_id,
+        content: replyingTo.content,
+        deleted: !!replyingTo.deleted,
+        has_attachment: !!replyingTo.attachment,
+      };
+      onSend(content, pending?.id, replyingTo.id, preview);
+      setReplyingTo(null);
+    } else {
+      onSend(content, pending?.id);
+    }
     setDraft('');
     setPending(null);
   };
@@ -130,6 +153,7 @@ export function Thread({
             mine={m.sender_id === currentUserId}
             isGroup={isGroup}
             senderName={memberNames[m.sender_id]}
+            memberNames={memberNames}
             onRetry={onRetry}
             attachmentUrl={attachmentUrl}
             currentUserId={currentUserId}
@@ -138,6 +162,9 @@ export function Thread({
             onReact={onReact}
             onRestore={onRestore}
             loadEditHistory={loadEditHistory}
+            onReply={setReplyingTo}
+            onScrollToMessage={scrollToMessage}
+            bubbleRef={(el) => { bubbleRefs.current[m.id] = el; }}
           />
         ))}
         <div ref={bottomRef} />
@@ -162,6 +189,25 @@ export function Thread({
           📎
         </button>
         <div className="flex flex-1 flex-col gap-1">
+          {replyingTo && (
+            <div
+              data-testid="reply-banner"
+              className="flex items-center gap-2 rounded-lg bg-indigo-50 border-l-4 border-indigo-400 px-3 py-1 text-sm text-slate-700"
+            >
+              <span className="font-medium text-indigo-600 shrink-0">
+                {memberNames[replyingTo.sender_id] ?? '對方'}
+              </span>
+              <span className="truncate opacity-80">{replyingTo.content}</span>
+              <button
+                type="button"
+                aria-label="取消回覆"
+                onClick={() => setReplyingTo(null)}
+                className="ml-auto text-slate-400 hover:text-slate-600 shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+          )}
           {pending && (
             <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1 text-sm text-slate-700">
               <span className="truncate">{pending.original_name}</span>
@@ -243,13 +289,41 @@ function ReactionPicker({ onPick }: { onPick: (emoji: string) => void }) {
   );
 }
 
+/** 引用塊：顯示被回覆訊息的寄件人名與摘要，可點擊捲動到原訊息。 */
+function ReplyQuoteBlock({
+  replyTo,
+  memberNames,
+  onScrollToMessage,
+}: {
+  replyTo: ReplyPreview;
+  memberNames: Record<string, string>;
+  onScrollToMessage: (id: string) => void;
+}) {
+  const senderName = memberNames[replyTo.sender_id] ?? '對方';
+  return (
+    <button
+      type="button"
+      onClick={() => onScrollToMessage(replyTo.id)}
+      className="mb-1 w-full text-left rounded-lg border-l-4 border-indigo-300 bg-black/5 px-2 py-1 text-xs"
+    >
+      <span className="block font-medium text-indigo-500">{senderName}</span>
+      <span className="block truncate opacity-80">
+        {replyTo.deleted ? '原訊息已刪除' : replyTo.content}
+      </span>
+    </button>
+  );
+}
+
 /** 單則訊息泡泡：區分我方/對方，我方顯示傳送狀態與重試。 */
 function MessageBubble({
-  message, mine, isGroup, senderName, onRetry, attachmentUrl,
+  message, mine, isGroup, senderName, memberNames, onRetry, attachmentUrl,
   currentUserId, onEdit, onDelete, onReact, onRestore, loadEditHistory,
+  onReply, onScrollToMessage, bubbleRef,
 }: {
   message: ChatMessage; mine: boolean; isGroup: boolean;
-  senderName?: string; onRetry: (tempId: string) => void;
+  senderName?: string;
+  memberNames: Record<string, string>;
+  onRetry: (tempId: string) => void;
   attachmentUrl: (id: string) => string;
   currentUserId: string;
   onEdit: (id: string, content: string) => void;
@@ -257,6 +331,9 @@ function MessageBubble({
   onReact: (id: string, emoji: string) => void;
   onRestore: (id: string) => void;
   loadEditHistory: (id: string) => Promise<MessageVersion[]>;
+  onReply: (message: ChatMessage) => void;
+  onScrollToMessage: (id: string) => void;
+  bubbleRef: (el: HTMLDivElement | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -297,10 +374,21 @@ function MessageBubble({
   }
 
   return (
-    <div className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+    <div
+      data-message-id={message.id}
+      ref={bubbleRef}
+      className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}
+    >
       <div className={`relative max-w-[70%] rounded-2xl px-4 py-2 ${mine ? 'bg-indigo-600 text-white' : 'bg-white text-slate-800 shadow'}`}>
         {isGroup && !mine && senderName && (
           <p className="mb-0.5 text-xs font-medium text-indigo-500">{senderName}</p>
+        )}
+        {message.reply_to && (
+          <ReplyQuoteBlock
+            replyTo={message.reply_to}
+            memberNames={memberNames}
+            onScrollToMessage={onScrollToMessage}
+          />
         )}
         {message.attachment && (
           message.attachment.is_image ? (
@@ -414,6 +502,20 @@ function MessageBubble({
             </button>
           </div>
         )
+      )}
+
+      {/* 回覆鈕：未刪且非系統訊息（含自己/對方皆顯示） */}
+      {message.status !== 'sending' && (
+        <div className="mt-0.5 flex gap-2 text-xs opacity-60">
+          <button
+            type="button"
+            aria-label="回覆"
+            onClick={() => onReply(message)}
+            className="hover:opacity-100"
+          >
+            回覆
+          </button>
+        </div>
       )}
     </div>
   );

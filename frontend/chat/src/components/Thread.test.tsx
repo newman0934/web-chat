@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { ReplyPreview } from '../../../contracts';
 import type { ChatMessage } from '../messageStore';
 import { Thread } from './Thread';
 
@@ -307,5 +308,109 @@ describe('Thread 小增強', () => {
     fireEvent.click(screen.getByRole('button', { name: '更多表情' }));
     fireEvent.click(screen.getByText('mock-picker-pick'));
     expect(onReact).toHaveBeenCalledWith('m1', '🎉');
+  });
+});
+
+describe('Thread 回覆 UI', () => {
+  const base = {
+    isGroup: false as const,
+    memberNames: { 'alice': 'Alice', 'me': 'Me' },
+    currentUserId: 'me',
+    canLoadMore: false,
+    title: 'Alice',
+    onLoadMore: vi.fn(),
+    onSend: vi.fn(),
+    onRetry: vi.fn(),
+    onEdit: vi.fn(),
+    onDelete: vi.fn(),
+    onReact: vi.fn(),
+    attachmentUrl: (id: string) => id,
+    onUpload: vi.fn(),
+    onRestore: vi.fn(),
+    loadEditHistory: vi.fn(),
+  };
+
+  it('泡泡有 reply_to 時渲染引用塊（寄件人名 + 摘要）', () => {
+    const replyPreview: ReplyPreview = {
+      id: 'orig-1',
+      sender_id: 'alice',
+      content: '原始訊息內容',
+      deleted: false,
+      has_attachment: false,
+    };
+    render(
+      <Thread
+        {...base}
+        messages={[
+          msg({ id: 'orig-1', sender_id: 'alice', content: '原始訊息內容' }),
+          msg({ id: 'm2', sender_id: 'me', content: '回覆內容', reply_to: replyPreview }),
+        ]}
+      />,
+    );
+    // 引用塊應顯示被引用者名字與內容（getAllByText 因為 title 也叫 Alice）
+    expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
+    // 引用塊有 data-message-id 的上層，找 blockquote/button 包含 '原始訊息內容'
+    expect(screen.getAllByText('原始訊息內容').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reply_to.deleted=true 時引用塊顯示「原訊息已刪除」', () => {
+    const replyPreview: ReplyPreview = {
+      id: 'orig-1',
+      sender_id: 'alice',
+      content: '',
+      deleted: true,
+      has_attachment: false,
+    };
+    render(
+      <Thread
+        {...base}
+        messages={[msg({ id: 'm2', sender_id: 'me', content: '回覆', reply_to: replyPreview })]}
+      />,
+    );
+    expect(screen.getByText('原訊息已刪除')).toBeInTheDocument();
+  });
+
+  it('點「回覆」後 composer 上方出現引用橫幅（寄件人名 + 內容）', () => {
+    render(
+      <Thread
+        {...base}
+        messages={[msg({ id: 'm1', sender_id: 'alice', content: '快來看' })]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '回覆' }));
+    // 橫幅顯示被回覆者名字與內容摘要
+    // 使用 getAllByText 因為「Alice」可能在 senderName 也出現（isGroup=false 時不顯示，但 memberNames 含）
+    expect(screen.getByRole('button', { name: '取消回覆' })).toBeInTheDocument();
+    // 橫幅內應有被引用的內容摘要
+    const banner = screen.getByRole('button', { name: '取消回覆' }).closest('[data-testid="reply-banner"]') ??
+                   screen.getByRole('button', { name: '取消回覆' }).parentElement;
+    expect(banner?.textContent).toContain('快來看');
+  });
+
+  it('送出時有回覆狀態則 onSend 帶 reply 參數，送出後橫幅清除', () => {
+    const onSend = vi.fn();
+    render(
+      <Thread
+        {...base}
+        onSend={onSend}
+        messages={[msg({ id: 'm1', sender_id: 'alice', content: '快來看' })]}
+      />,
+    );
+    // 點回覆
+    fireEvent.click(screen.getByRole('button', { name: '回覆' }));
+    // 橫幅出現
+    expect(screen.getByRole('button', { name: '取消回覆' })).toBeInTheDocument();
+    // 輸入並送出
+    fireEvent.change(screen.getByLabelText('訊息輸入'), { target: { value: '好的' } });
+    fireEvent.click(screen.getByRole('button', { name: '送出' }));
+    // onSend 被呼叫，第三引數為被引用訊息 id
+    expect(onSend).toHaveBeenCalledWith(
+      '好的',
+      undefined,
+      'm1',
+      expect.objectContaining({ id: 'm1', sender_id: 'alice' }),
+    );
+    // 送出後橫幅消失
+    expect(screen.queryByRole('button', { name: '取消回覆' })).toBeNull();
   });
 });
