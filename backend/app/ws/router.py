@@ -146,6 +146,7 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
     content = (data.get("content") or "").strip()
     temp_id = data.get("temp_id")
     attachment_id_raw = data.get("attachment_id")
+    reply_to_message_id_raw = data.get("reply_to_message_id")
 
     if not conv_id_raw or (not content and not attachment_id_raw):
         await websocket.send_json(
@@ -160,6 +161,17 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
         )
         return
 
+    # Validate reply_to_message_id if provided (before opening the DB session).
+    reply_id: uuid.UUID | None = None
+    if reply_to_message_id_raw is not None:
+        try:
+            reply_id = uuid.UUID(str(reply_to_message_id_raw))
+        except ValueError:
+            await websocket.send_json(
+                {"type": "error", "reason": "invalid_payload", "temp_id": temp_id}
+            )
+            return
+
     async with db_module.SessionLocal() as db:
         conv = await get_conversation_for_member(db, conv_id, user.id)
         if conv is None:
@@ -167,6 +179,20 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
                 {"type": "error", "reason": "forbidden", "temp_id": temp_id}
             )
             return
+
+        # Validate that the quoted message exists, belongs to this conversation,
+        # and has not been soft-deleted.
+        if reply_id is not None:
+            reply_msg = await db.get(Message, reply_id)
+            if (
+                reply_msg is None
+                or reply_msg.conversation_id != conv_id
+                or reply_msg.deleted_at is not None
+            ):
+                await websocket.send_json(
+                    {"type": "error", "reason": "invalid_reply", "temp_id": temp_id}
+                )
+                return
 
         attachment = None
         if attachment_id_raw:
@@ -188,7 +214,12 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
                 )
                 return
 
-        message = Message(conversation_id=conv_id, sender_id=user.id, content=content)
+        message = Message(
+            conversation_id=conv_id,
+            sender_id=user.id,
+            content=content,
+            reply_to_message_id=reply_id,
+        )
         db.add(message)
         try:
             await db.flush()  # 取得 message.id，尚未 commit
