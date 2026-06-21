@@ -4,6 +4,15 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../messageStore';
 import { Thread } from './Thread';
 
+vi.mock('@emoji-mart/react', () => ({
+  default: ({ onEmojiSelect }: { onEmojiSelect: (e: { native: string }) => void }) => (
+    <button type="button" onClick={() => onEmojiSelect({ native: '🎉' })}>
+      mock-picker-pick
+    </button>
+  ),
+}));
+vi.mock('@emoji-mart/data', () => ({ default: {} }));
+
 function msg(over: Partial<ChatMessage>): ChatMessage {
   return {
     id: 'm1',
@@ -225,5 +234,78 @@ describe('Thread', () => {
     expect(el.className).toContain('bg-slate-100');
     // 系統訊息不應出現「編輯 / 刪除」泡泡動作
     expect(screen.queryByRole('button', { name: '編輯' })).toBeNull();
+  });
+});
+
+function nowIso(offsetMs = 0) {
+  return new Date(Date.now() - offsetMs).toISOString();
+}
+
+describe('Thread 小增強', () => {
+  const base = {
+    isGroup: false as const, memberNames: {}, currentUserId: 'me',
+    canLoadMore: false, title: 'Bob',
+    onLoadMore: vi.fn(), onSend: vi.fn(), onRetry: vi.fn(),
+    onEdit: vi.fn(), onDelete: vi.fn(), onReact: vi.fn(),
+    attachmentUrl: (id: string) => id, onUpload: vi.fn(),
+    onRestore: vi.fn(), loadEditHistory: vi.fn(),
+  };
+
+  it('編輯鈕只在 15 分鐘內顯示；超時隱藏但刪除仍在', () => {
+    const { rerender } = render(
+      <Thread {...base}
+        messages={[msg({ id: 'm1', sender_id: 'me', content: 'fresh', created_at: nowIso(60_000) })]} />,
+    );
+    expect(screen.getByRole('button', { name: '編輯' })).toBeInTheDocument();
+
+    rerender(
+      <Thread {...base}
+        messages={[msg({ id: 'm1', sender_id: 'me', content: 'old', created_at: nowIso(16 * 60_000) })]} />,
+    );
+    expect(screen.queryByRole('button', { name: '編輯' })).toBeNull();
+    expect(screen.getByRole('button', { name: '刪除' })).toBeInTheDocument();
+  });
+
+  it('點「已編輯」呼叫 loadEditHistory 並列出版本', async () => {
+    const loadEditHistory = vi.fn().mockResolvedValue([
+      { content: 'v1', created_at: '2026-06-21T00:00:00Z' },
+      { content: 'v2', created_at: '2026-06-21T00:05:00Z' },
+    ]);
+    render(
+      <Thread {...base} loadEditHistory={loadEditHistory}
+        messages={[msg({ id: 'm1', sender_id: 'me', content: 'v2', edited_at: '2026-06-21T00:05:00Z', created_at: nowIso(60_000) })]} />,
+    );
+    fireEvent.click(screen.getByText('已編輯'));
+    expect(loadEditHistory).toHaveBeenCalledWith('m1');
+    expect(await screen.findByText('v1')).toBeInTheDocument();
+  });
+
+  it('已刪除 + 寄件人 + 5 分鐘內顯示還原鈕並呼叫 onRestore', () => {
+    const onRestore = vi.fn();
+    render(
+      <Thread {...base} onRestore={onRestore}
+        messages={[msg({ id: 'm1', sender_id: 'me', deleted: true, content: '', deleted_at: nowIso(60_000) })]} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '還原' }));
+    expect(onRestore).toHaveBeenCalledWith('m1');
+  });
+
+  it('已刪除超過 5 分鐘不顯示還原鈕', () => {
+    render(
+      <Thread {...base}
+        messages={[msg({ id: 'm1', sender_id: 'me', deleted: true, content: '', deleted_at: nowIso(6 * 60_000) })]} />,
+    );
+    expect(screen.queryByRole('button', { name: '還原' })).toBeNull();
+  });
+
+  it('emoji-mart 選擇器選 emoji 呼叫 onReact', () => {
+    const onReact = vi.fn();
+    render(
+      <Thread {...base} onReact={onReact}
+        messages={[msg({ id: 'm1', sender_id: 'me', content: 'hi', created_at: nowIso(60_000) })]} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '更多表情' }));
+    fireEvent.click(screen.getByText('mock-picker-pick'));
+    expect(onReact).toHaveBeenCalledWith('m1', '🎉');
   });
 });

@@ -244,6 +244,13 @@ export default function ChatApp({
   const toggleReaction = useCallback((id: string, emoji: string) => {
     socketRef.current?.send({ type: 'react', message_id: id, emoji });
   }, []);
+  const restoreMessage = useCallback((id: string) => {
+    socketRef.current?.send({ type: 'restore', message_id: id });
+  }, []);
+  const loadEditHistory = useCallback(
+    (id: string) => api.getMessageEdits(id),
+    [api],
+  );
 
   /** 加好友並刷新對話清單；回傳 null 表示成功，否則為錯誤訊息字串。 */
   const addContact = useCallback(
@@ -343,6 +350,8 @@ export default function ChatApp({
           onEdit={editMessage}
           onDelete={deleteMessage}
           onReact={toggleReaction}
+          onRestore={restoreMessage}
+          loadEditHistory={loadEditHistory}
           onStartCall={otherUser ? startCall : undefined}
           onShowGroupInfo={isGroup ? () => setShowInfo(true) : undefined}
         />
