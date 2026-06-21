@@ -218,6 +218,17 @@ function MessageBubble({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
+  // 系統訊息：置中灰字一行，無泡泡 / 狀態 / 編輯刪除 / 表情。
+  if (message.kind === 'system') {
+    return (
+      <div className="flex justify-center">
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
+          {message.content}
+        </span>
+      </div>
+    );
+  }
+
   // 已刪除：整個泡泡換成佔位
   if (message.deleted) {
     return (
