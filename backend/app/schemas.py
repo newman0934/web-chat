@@ -87,6 +87,11 @@ class GroupCreateRequest(BaseModel):
     member_user_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
+class AddMemberRequest(BaseModel):
+    user_id: uuid.UUID | None = None
+    email: EmailStr | None = None
+
+
 class ConversationOut(BaseModel):
     id: uuid.UUID
     type: str
