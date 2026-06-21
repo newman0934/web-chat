@@ -5,6 +5,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -90,6 +91,14 @@ class GroupCreateRequest(BaseModel):
 class AddMemberRequest(BaseModel):
     user_id: uuid.UUID | None = None
     email: EmailStr | None = None
+
+
+class GroupRenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class RoleUpdateRequest(BaseModel):
+    role: Literal["admin", "member"]
 
 
 class ConversationOut(BaseModel):

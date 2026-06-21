@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.db import get_db
 from app.models import Contact, Conversation, ConversationMember, Message, User
-from app.schemas import AddMemberRequest, AttachmentOut, ConversationOut, GroupCreateRequest, MessageOut, UserOut
+from app.schemas import AddMemberRequest, AttachmentOut, ConversationOut, GroupCreateRequest, GroupRenameRequest, MessageOut, RoleUpdateRequest, UserOut
 from app.services.conversations import (
     create_group_conversation,
     create_system_message,
@@ -258,5 +258,101 @@ async def remove_member(
     remaining = [m for m in member_ids_before if m != user_id]
     await _push_system_and_updated(remaining, conversation_id, _system_message_payload(sys))
     await _push_removed([user_id], conversation_id)
+    await db.refresh(conv)
+    return await _build_conversation_out(db, conv, current_user)
+
+
+@router.post("/{conversation_id}/leave")
+async def leave_group(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    conv = await get_conversation_for_member(db, conversation_id, current_user.id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="查無此對話或無權限")
+    if conv.type != "group":
+        raise HTTPException(status_code=400, detail="僅群組可退出")
+
+    member_ids_before = await get_member_ids(db, conversation_id)
+    me_member = await get_member(db, conversation_id, current_user.id)
+
+    if len(member_ids_before) == 1:
+        # 最後一人退出 → 刪群（成員/訊息 CASCADE）
+        await db.delete(conv)
+        await db.commit()
+        await _push_removed([current_user.id], conversation_id)
+        return {"ok": True}
+
+    if await would_leave_groupless_of_admin(db, conversation_id, current_user.id, removing=True):
+        raise HTTPException(status_code=400, detail="請先指派另一位管理員再退出")
+
+    await db.delete(me_member)
+    sys = await create_system_message(
+        db, conversation_id, current_user.id, f"{current_user.display_name} 退出群組"
+    )
+    await db.commit()
+    await db.refresh(sys)
+
+    remaining = [m for m in member_ids_before if m != current_user.id]
+    await _push_system_and_updated(remaining, conversation_id, _system_message_payload(sys))
+    await _push_removed([current_user.id], conversation_id)
+    return {"ok": True}
+
+
+@router.patch("/{conversation_id}", response_model=ConversationOut)
+async def rename_group(
+    conversation_id: uuid.UUID,
+    payload: GroupRenameRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    conv = await _require_group_admin(db, conversation_id, current_user)
+    conv.name = payload.name.strip()
+    sys = await create_system_message(
+        db, conversation_id, current_user.id, f"群組已改名為「{conv.name}」"
+    )
+    await db.commit()
+    await db.refresh(sys)
+    await db.refresh(conv)
+
+    member_ids = await get_member_ids(db, conversation_id)
+    await _push_system_and_updated(member_ids, conversation_id, _system_message_payload(sys))
+    return await _build_conversation_out(db, conv, current_user)
+
+
+@router.patch("/{conversation_id}/members/{user_id}/role", response_model=ConversationOut)
+async def set_member_role(
+    conversation_id: uuid.UUID,
+    user_id: uuid.UUID,
+    payload: RoleUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    conv = await _require_group_admin(db, conversation_id, current_user)
+    target_member = await get_member(db, conversation_id, user_id)
+    if target_member is None:
+        raise HTTPException(status_code=404, detail="此人不是群組成員")
+    if target_member.role == payload.role:
+        # no-op：不寫系統訊息，直接回現況
+        return await _build_conversation_out(db, conv, current_user)
+    if payload.role == "member" and await would_leave_groupless_of_admin(
+        db, conversation_id, user_id, new_role="member"
+    ):
+        raise HTTPException(status_code=400, detail="群組需至少一位管理員")
+
+    target = await db.get(User, user_id)
+    target_member.role = payload.role
+    text = (
+        f"{current_user.display_name} 將 {target.display_name} 設為管理員"
+        if payload.role == "admin"
+        else f"{current_user.display_name} 取消 {target.display_name} 的管理員"
+    )
+    sys = await create_system_message(db, conversation_id, current_user.id, text)
+    await db.commit()
+    await db.refresh(sys)
+
+    member_ids = await get_member_ids(db, conversation_id)
+    await _push_system_and_updated(member_ids, conversation_id, _system_message_payload(sys))
     await db.refresh(conv)
     return await _build_conversation_out(db, conv, current_user)
