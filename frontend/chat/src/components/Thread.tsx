@@ -30,6 +30,7 @@ interface ThreadProps {
   loadEditHistory?: (id: string) => Promise<MessageVersion[]>;
   onStartCall?: () => void;
   onShowGroupInfo?: () => void;
+  onForward?: (message: ChatMessage) => void;
 }
 
 /** 右側對話視窗：訊息列表、載入更多、輸入框與送出。 */
@@ -52,6 +53,7 @@ export function Thread({
   loadEditHistory = async () => [],
   onStartCall,
   onShowGroupInfo,
+  onForward,
 }: ThreadProps) {
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<Attachment | null>(null);
@@ -163,6 +165,7 @@ export function Thread({
             onRestore={onRestore}
             loadEditHistory={loadEditHistory}
             onReply={setReplyingTo}
+            onForward={onForward}
             onScrollToMessage={scrollToMessage}
             bubbleRef={(el) => { bubbleRefs.current[m.id] = el; }}
           />
@@ -318,7 +321,7 @@ function ReplyQuoteBlock({
 function MessageBubble({
   message, mine, isGroup, senderName, memberNames, onRetry, attachmentUrl,
   currentUserId, onEdit, onDelete, onReact, onRestore, loadEditHistory,
-  onReply, onScrollToMessage, bubbleRef,
+  onReply, onForward, onScrollToMessage, bubbleRef,
 }: {
   message: ChatMessage; mine: boolean; isGroup: boolean;
   senderName?: string;
@@ -332,6 +335,7 @@ function MessageBubble({
   onRestore: (id: string) => void;
   loadEditHistory: (id: string) => Promise<MessageVersion[]>;
   onReply: (message: ChatMessage) => void;
+  onForward?: (message: ChatMessage) => void;
   onScrollToMessage: (id: string) => void;
   bubbleRef: (el: HTMLDivElement | null) => void;
 }) {
@@ -382,6 +386,9 @@ function MessageBubble({
       <div className={`relative max-w-[70%] rounded-2xl px-4 py-2 ${mine ? 'bg-indigo-600 text-white' : 'bg-white text-slate-800 shadow'}`}>
         {isGroup && !mine && senderName && (
           <p className="mb-0.5 text-xs font-medium text-indigo-500">{senderName}</p>
+        )}
+        {message.forwarded_from && (
+          <p className="mb-1 text-xs text-slate-400">↪ 轉發自 {message.forwarded_from.display_name}</p>
         )}
         {message.reply_to && (
           <ReplyQuoteBlock
@@ -504,7 +511,7 @@ function MessageBubble({
         )
       )}
 
-      {/* 回覆鈕：未刪且非系統訊息（含自己/對方皆顯示） */}
+      {/* 回覆 / 轉發鈕：未刪且非系統訊息（含自己/對方皆顯示） */}
       {message.status !== 'sending' && (
         <div className="mt-0.5 flex gap-2 text-xs opacity-60">
           <button
@@ -515,6 +522,16 @@ function MessageBubble({
           >
             回覆
           </button>
+          {onForward && (
+            <button
+              type="button"
+              aria-label="轉發"
+              onClick={() => onForward(message)}
+              className="hover:opacity-100"
+            >
+              轉發
+            </button>
+          )}
         </div>
       )}
     </div>

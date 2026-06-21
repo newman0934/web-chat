@@ -414,3 +414,88 @@ describe('Thread 回覆 UI', () => {
     expect(screen.queryByRole('button', { name: '取消回覆' })).toBeNull();
   });
 });
+
+describe('Thread 轉發 UI', () => {
+  const base = {
+    isGroup: false as const,
+    memberNames: { alice: 'Alice', me: 'Me' },
+    currentUserId: 'me',
+    canLoadMore: false,
+    title: 'Alice',
+    onLoadMore: vi.fn(),
+    onSend: vi.fn(),
+    onRetry: vi.fn(),
+    onEdit: vi.fn(),
+    onDelete: vi.fn(),
+    onReact: vi.fn(),
+    attachmentUrl: (id: string) => id,
+    onUpload: vi.fn(),
+    onRestore: vi.fn(),
+    loadEditHistory: vi.fn(),
+  };
+
+  it('泡泡有 forwarded_from 時渲染「轉發自 {display_name}」', () => {
+    render(
+      <Thread
+        {...base}
+        messages={[
+          msg({
+            id: 'm1',
+            sender_id: 'alice',
+            content: '轉發內容',
+            forwarded_from: { id: 'orig-user', display_name: 'Charlie' },
+          }),
+        ]}
+        onForward={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/轉發自 Charlie/)).toBeInTheDocument();
+  });
+
+  it('點擊「轉發」按鈕呼叫 onForward 並傳入訊息物件', () => {
+    const onForward = vi.fn();
+    const m = msg({ id: 'm1', sender_id: 'alice', content: '要轉的訊息', status: 'sent' as const });
+    render(
+      <Thread
+        {...base}
+        messages={[m]}
+        onForward={onForward}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '轉發' }));
+    expect(onForward).toHaveBeenCalledWith(expect.objectContaining({ id: 'm1' }));
+  });
+
+  it('sending 狀態泡泡不顯示轉發鈕', () => {
+    render(
+      <Thread
+        {...base}
+        messages={[msg({ id: 'm1', sender_id: 'alice', content: '傳送中', status: 'sending' as const })]}
+        onForward={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: '轉發' })).toBeNull();
+  });
+
+  it('已刪除泡泡不顯示轉發鈕', () => {
+    render(
+      <Thread
+        {...base}
+        messages={[msg({ id: 'm1', sender_id: 'alice', content: '', deleted: true })]}
+        onForward={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: '轉發' })).toBeNull();
+  });
+
+  it('系統訊息不顯示轉發鈕', () => {
+    render(
+      <Thread
+        {...base}
+        messages={[msg({ id: 'm1', sender_id: 'alice', content: '系統通知', kind: 'system' as const })]}
+        onForward={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: '轉發' })).toBeNull();
+  });
+});

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatAppProps, ReplyPreview, ServerWsMessage } from '../../contracts';
 import { ApiClient, ApiError, UnauthorizedError } from './api';
 import { CallOverlay } from './components/CallOverlay';
+import { ForwardPicker } from './components/ForwardPicker';
 import { GroupInfoPanel } from './components/GroupInfoPanel';
 import { Sidebar } from './components/Sidebar';
 import { Thread } from './components/Thread';
@@ -293,6 +294,11 @@ export default function ChatApp({
   );
 
   const [showInfo, setShowInfo] = useState(false);
+  const [forwarding, setForwarding] = useState<string | null>(null);
+
+  const forwardMessage = useCallback((messageId: string, toConversationId: string) => {
+    socketRef.current?.send({ type: 'forward', message_id: messageId, to_conversation_id: toConversationId });
+  }, []);
 
   const runGroupOp = useCallback(
     async (op: () => Promise<unknown>) => {
@@ -355,11 +361,19 @@ export default function ChatApp({
           loadEditHistory={loadEditHistory}
           onStartCall={otherUser ? startCall : undefined}
           onShowGroupInfo={isGroup ? () => setShowInfo(true) : undefined}
+          onForward={(m) => setForwarding(m.id)}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center text-slate-400">
           選擇一個對話開始聊天
         </div>
+      )}
+      {forwarding && (
+        <ForwardPicker
+          conversations={conversations}
+          onPick={(convId) => { forwardMessage(forwarding, convId); setForwarding(null); }}
+          onClose={() => setForwarding(null)}
+        />
       )}
       {showInfo && isGroup && activeConv && (
         <GroupInfoPanel
