@@ -39,3 +39,9 @@ class Message(Base):
     kind: Mapped[str] = mapped_column(
         String(16), nullable=False, default="user", server_default="user"
     )
+    reply_to_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("messages.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    forwarded_from_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
