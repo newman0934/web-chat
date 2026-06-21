@@ -216,7 +216,13 @@ describe('Thread', () => {
         onUpload={vi.fn()}
       />,
     );
-    expect(screen.getByText('Alice 把 Bob 加入群組')).toBeInTheDocument();
+    const el = screen.getByText('Alice 把 Bob 加入群組');
+    expect(el).toBeInTheDocument();
+    // 系統訊息不在泡泡內（無 rounded-2xl 外層）
+    expect(el.closest('.rounded-2xl')).toBeNull();
+    // 而是置中灰字 pill（rounded-full + bg-slate-100）
+    expect(el.className).toContain('rounded-full');
+    expect(el.className).toContain('bg-slate-100');
     // 系統訊息不應出現「編輯 / 刪除」泡泡動作
     expect(screen.queryByRole('button', { name: '編輯' })).toBeNull();
   });
