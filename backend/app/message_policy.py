@@ -3,3 +3,4 @@
 from datetime import timedelta
 
 EDIT_WINDOW = timedelta(minutes=15)
+RESTORE_WINDOW = timedelta(minutes=5)

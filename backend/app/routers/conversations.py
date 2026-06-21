@@ -142,6 +142,7 @@ async def list_messages(
                 attachment=AttachmentOut.model_validate(att) if att else None,
                 edited_at=m.edited_at,
                 deleted=deleted,
+                deleted_at=m.deleted_at,
                 reactions=groups,
                 kind=m.kind,
             )
@@ -161,6 +162,7 @@ def _system_message_payload(msg: Message) -> dict:
         "attachment": None,
         "edited_at": None,
         "deleted": False,
+        "deleted_at": None,
         "reactions": [],
         "kind": "system",
     }

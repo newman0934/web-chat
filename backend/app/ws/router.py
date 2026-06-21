@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import db as db_module
 from app.auth.security import decode_access_token
-from app.message_policy import EDIT_WINDOW
+from app.message_policy import EDIT_WINDOW, RESTORE_WINDOW
 from app.models import Attachment, Message, MessageEdit, Reaction, User
 from app.reactions import QUICK_REACTIONS
 from app.schemas import AttachmentOut
@@ -54,6 +54,7 @@ async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
         ),
         "edited_at": msg.edited_at.astimezone(timezone.utc).isoformat() if msg.edited_at else None,
         "deleted": deleted,
+        "deleted_at": msg.deleted_at.astimezone(timezone.utc).isoformat() if msg.deleted_at else None,
         "reactions": [g.model_dump(mode="json") for g in groups],
         "kind": msg.kind,
     }
@@ -106,6 +107,8 @@ async def _handle_client_message(websocket: WebSocket, user: User, data: dict) -
         await _handle_edit(websocket, user, data)
     elif msg_type == "delete":
         await _handle_delete(websocket, user, data)
+    elif msg_type == "restore":
+        await _handle_restore(websocket, user, data)
     elif msg_type == "react":
         await _handle_react(websocket, user, data)
     elif msg_type in _CALL_TYPES:
@@ -326,9 +329,27 @@ async def _handle_delete(websocket, user, data):
             return
         if msg.deleted_at is None:
             msg.deleted_at = datetime.now(timezone.utc)
-            msg.content = ""
             await db.commit()
             await db.refresh(msg)
+        await _broadcast_updated(db, msg.conversation_id, user.id, msg)
+
+
+async def _handle_restore(websocket, user, data):
+    mid = _parse_uuid(data.get("message_id"))
+    if mid is None:
+        await websocket.send_json({"type": "error", "reason": "invalid_payload"})
+        return
+    async with db_module.SessionLocal() as db:
+        msg = await db.get(Message, mid)
+        if msg is None or msg.sender_id != user.id or msg.deleted_at is None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+        if datetime.now(timezone.utc) - _as_utc(msg.deleted_at) > RESTORE_WINDOW:
+            await websocket.send_json({"type": "error", "reason": "restore_window_passed"})
+            return
+        msg.deleted_at = None
+        await db.commit()
+        await db.refresh(msg)
         await _broadcast_updated(db, msg.conversation_id, user.id, msg)
 
 
