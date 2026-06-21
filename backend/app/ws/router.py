@@ -17,9 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import db as db_module
 from app.auth.security import decode_access_token
-from app.message_policy import EDIT_WINDOW, RESTORE_WINDOW
+from app.message_policy import EDIT_WINDOW, RESTORE_WINDOW, is_valid_reaction_emoji
 from app.models import Attachment, Message, MessageEdit, Reaction, User
-from app.reactions import QUICK_REACTIONS
 from app.schemas import AttachmentOut
 from app.services.conversations import (
     are_friends,
@@ -356,7 +355,7 @@ async def _handle_restore(websocket, user, data):
 async def _handle_react(websocket, user, data):
     mid = _parse_uuid(data.get("message_id"))
     emoji = data.get("emoji")
-    if mid is None or emoji not in QUICK_REACTIONS:
+    if mid is None or not is_valid_reaction_emoji(emoji):
         await websocket.send_json({"type": "error", "reason": "invalid_reaction"})
         return
     async with db_module.SessionLocal() as db:
