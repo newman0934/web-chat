@@ -77,7 +77,7 @@
 - 測試 `backend/tests/test_ws_reply.py`（starlette TestClient + session_factory）：
   - 回覆同對話訊息 → ack/廣播 `reply_to` 正確（id、sender_id、content）。
   - 跨對話 reply_to → `invalid_reply`，DB 不新增訊息。
-  - 引用已刪訊息（先刪再回覆）→ 仍可回覆，`reply_to.deleted=true`。
+  - 引用「送出時已軟刪」的訊息 → `invalid_reply`（不可回覆已刪訊息）。deleted 預覽只發生在「回覆後原訊息才被刪」，那是 RF-09，由 Task 2 序列化測試覆蓋。
 
 **AC**：covers RF-01（後端）、RF-04、RF-09。
 
