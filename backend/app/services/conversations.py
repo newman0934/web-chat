@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import and_, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Attachment, Contact, Conversation, ConversationMember, Message, MessageRead, Reaction
+from app.models import Attachment, Contact, Conversation, ConversationMember, Message, MessageRead, Reaction, User
 
 
 def direct_key(a: uuid.UUID, b: uuid.UUID) -> str:
@@ -205,6 +205,51 @@ async def create_system_message(
     db.add(msg)
     await db.flush()
     return msg
+
+
+async def build_reply_preview(db: AsyncSession, message: Message) -> dict | None:
+    """被引用原訊息的精簡預覽 dict，供 WS / REST 兩端共用。
+
+    回傳 dict 的 uuid 欄位保留 uuid.UUID 型別（非 str），
+    讓 REST 路徑可直接傳給 Pydantic schema，
+    WS 路徑在 _serialize_message 裡統一轉 str。
+    """
+    if message.reply_to_message_id is None:
+        return None
+    orig = await db.get(Message, message.reply_to_message_id)
+    if orig is None:
+        # FK SET NULL 後 id 已被清空，或列已被硬刪（不在正常流程中，但防禦）
+        return None
+    deleted = orig.deleted_at is not None
+    content = "" if deleted else orig.content
+    has_attachment = (
+        (not deleted)
+        and (await get_attachment_for_message(db, orig.id)) is not None
+    )
+    return {
+        "id": orig.id,
+        "sender_id": orig.sender_id,
+        "content": content,
+        "deleted": deleted,
+        "has_attachment": has_attachment,
+    }
+
+
+async def build_forwarded_from(db: AsyncSession, message: Message) -> dict | None:
+    """轉發訊息的原作者資訊 dict，供 WS / REST 兩端共用。
+
+    回傳 dict 的 id 欄位保留 uuid.UUID 型別（非 str），理由同上。
+    """
+    if message.forwarded_from_user_id is None:
+        return None
+    user = await db.get(User, message.forwarded_from_user_id)
+    if user is None:
+        # 原作者帳號已被刪
+        return None
+    return {
+        "id": user.id,
+        "display_name": user.display_name,
+    }
 
 
 async def would_leave_groupless_of_admin(

@@ -67,6 +67,21 @@ class ReactionGroupOut(BaseModel):
     user_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
+class ReplyPreviewOut(BaseModel):
+    """被引用原訊息的精簡預覽，嵌在回覆訊息的 reply_to 欄位。"""
+    id: uuid.UUID
+    sender_id: uuid.UUID
+    content: str
+    deleted: bool
+    has_attachment: bool
+
+
+class ForwardedFromOut(BaseModel):
+    """轉發訊息的原作者資訊，嵌在轉發訊息的 forwarded_from 欄位。"""
+    id: uuid.UUID
+    display_name: str
+
+
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -82,6 +97,8 @@ class MessageOut(BaseModel):
     deleted_at: datetime | None = None
     reactions: list[ReactionGroupOut] = Field(default_factory=list)
     kind: str = "user"
+    reply_to: ReplyPreviewOut | None = None
+    forwarded_from: ForwardedFromOut | None = None
 
 
 class MessageVersionOut(BaseModel):

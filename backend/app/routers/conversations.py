@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.db import get_db
 from app.models import Contact, Conversation, ConversationMember, Message, User
-from app.schemas import AddMemberRequest, AttachmentOut, ConversationOut, GroupCreateRequest, GroupRenameRequest, MessageOut, RoleUpdateRequest, UserOut
+from app.schemas import AddMemberRequest, AttachmentOut, ConversationOut, ForwardedFromOut, GroupCreateRequest, GroupRenameRequest, MessageOut, ReplyPreviewOut, RoleUpdateRequest, UserOut
 from app.services.conversations import (
+    build_forwarded_from,
+    build_reply_preview,
     create_group_conversation,
     create_system_message,
     get_attachment_for_message,
@@ -137,6 +139,10 @@ async def list_messages(
         deleted = m.deleted_at is not None
         att = None if deleted else await get_attachment_for_message(db, m.id)
         groups = [] if deleted else await get_reaction_groups(db, m.id)
+        # reply_to / forwarded_from: helpers return dicts with native uuid.UUID;
+        # Pydantic accepts uuid.UUID for uuid fields directly.
+        reply_to_d = await build_reply_preview(db, m)
+        forwarded_from_d = await build_forwarded_from(db, m)
         out.append(
             MessageOut(
                 id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
@@ -148,6 +154,8 @@ async def list_messages(
                 deleted_at=m.deleted_at,
                 reactions=groups,
                 kind=m.kind,
+                reply_to=ReplyPreviewOut(**reply_to_d) if reply_to_d else None,
+                forwarded_from=ForwardedFromOut(**forwarded_from_d) if forwarded_from_d else None,
             )
         )
     return out
@@ -168,6 +176,8 @@ def _system_message_payload(msg: Message) -> dict:
         "deleted_at": None,
         "reactions": [],
         "kind": "system",
+        "reply_to": None,
+        "forwarded_from": None,
     }
 
 

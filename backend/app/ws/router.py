@@ -22,6 +22,8 @@ from app.models import Attachment, Message, MessageEdit, Reaction, User
 from app.schemas import AttachmentOut
 from app.services.conversations import (
     are_friends,
+    build_forwarded_from,
+    build_reply_preview,
     get_conversation_for_member,
     get_other_member_ids,
     get_reaction_groups,
@@ -33,6 +35,20 @@ from app.ws.manager import manager
 router = APIRouter()
 
 
+def _stringify_uuid_dict(d: dict | None, uuid_keys: list[str]) -> dict | None:
+    """把 dict 中指定的 uuid 欄位轉為 str，回傳新 dict（原 dict 不變）。
+
+    Helper for WS path: helpers return native uuid.UUID; WS needs str for JSON.
+    """
+    if d is None:
+        return None
+    result = dict(d)
+    for k in uuid_keys:
+        if k in result and result[k] is not None:
+            result[k] = str(result[k])
+    return result
+
+
 async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
     deleted = msg.deleted_at is not None
     attachment = None
@@ -40,6 +56,13 @@ async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
         att_res = await db.execute(select(Attachment).where(Attachment.message_id == msg.id))
         attachment = att_res.scalar_one_or_none()
     groups = [] if deleted else await get_reaction_groups(db, msg.id)
+
+    # reply_to / forwarded_from: helpers return uuid.UUID; stringify for WS JSON.
+    reply_to_raw = await build_reply_preview(db, msg)
+    forwarded_from_raw = await build_forwarded_from(db, msg)
+    reply_to = _stringify_uuid_dict(reply_to_raw, ["id", "sender_id"])
+    forwarded_from = _stringify_uuid_dict(forwarded_from_raw, ["id"])
+
     return {
         "id": str(msg.id),
         "conversation_id": str(msg.conversation_id),
@@ -56,6 +79,8 @@ async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
         "deleted_at": msg.deleted_at.astimezone(timezone.utc).isoformat() if msg.deleted_at else None,
         "reactions": [g.model_dump(mode="json") for g in groups],
         "kind": msg.kind,
+        "reply_to": reply_to,
+        "forwarded_from": forwarded_from,
     }
 
 
