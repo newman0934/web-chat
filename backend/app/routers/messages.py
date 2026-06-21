@@ -23,7 +23,7 @@ async def list_message_edits(
 ):
     msg = await db.get(Message, message_id)
     if msg is None:
-        raise HTTPException(status_code=404, detail="查無此訊息")
+        raise HTTPException(status_code=404, detail="查無此訊息或無權限")
     conv = await get_conversation_for_member(db, msg.conversation_id, current_user.id)
     if conv is None:
         raise HTTPException(status_code=404, detail="查無此訊息或無權限")

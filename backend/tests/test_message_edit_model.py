@@ -2,16 +2,14 @@ import os
 import sqlite3
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 
 import pytest
 
 from app.models import Conversation, ConversationMember, Message, MessageEdit, User
 
-pytestmark = pytest.mark.asyncio
 
-
+@pytest.mark.asyncio
 async def test_message_edit_round_trips(session_factory):
     async with session_factory() as s:
         u = User(email="me@x.com", display_name="Me", password_hash="h")
