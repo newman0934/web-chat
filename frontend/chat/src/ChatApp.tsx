@@ -100,6 +100,12 @@ export default function ChatApp({
         case 'message_updated':
           st.updateMessage(msg.message);
           break;
+        case 'conversation_updated':
+          void loadConversations();
+          break;
+        case 'conversation_removed':
+          st.removeConversation(msg.conversation_id);
+          break;
         case 'call_offer':
         case 'call_answer':
         case 'call_ice':
