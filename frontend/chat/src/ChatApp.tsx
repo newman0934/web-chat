@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChatAppProps, ServerWsMessage } from '../../contracts';
+import type { ChatAppProps, ReplyPreview, ServerWsMessage } from '../../contracts';
 import { ApiClient, ApiError, UnauthorizedError } from './api';
 import { CallOverlay } from './components/CallOverlay';
 import { GroupInfoPanel } from './components/GroupInfoPanel';
@@ -199,19 +199,20 @@ export default function ChatApp({
   // ---- 送訊息（樂觀更新） ----
   /** 樂觀送出訊息：先插入 UI，再經 WS 送出；連線不可用則標 failed。 */
   const sendMessage = useCallback(
-    (content: string, attachmentId?: string) => {
+    (content: string, attachmentId?: string, replyToMessageId?: string, replyPreview?: ReplyPreview | null) => {
       const st = useChatStore.getState();
       const active = st.activeId;
       if (!active) return;
       const tempId = crypto.randomUUID();
       // 樂觀訊息先不帶附件預覽，待 server ack 帶回正式 attachment 再顯示。
-      st.appendOptimistic(active, makeOptimistic(active, currentUser.id, content, tempId));
+      st.appendOptimistic(active, makeOptimistic(active, currentUser.id, content, tempId, null, replyPreview ?? null));
       const ok = socketRef.current?.send({
         type: 'message',
         conversation_id: active,
         content,
         temp_id: tempId,
         attachment_id: attachmentId,
+        ...(replyToMessageId !== undefined ? { reply_to_message_id: replyToMessageId } : {}),
       });
       if (!ok) useChatStore.getState().failMessage(tempId);
     },
