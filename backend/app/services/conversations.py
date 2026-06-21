@@ -60,11 +60,14 @@ async def create_group_conversation(
     conv = Conversation(type="group", name=name, creator_id=creator_id)
     db.add(conv)
     await db.flush()
-    # 建立者 + 受邀成員（去重）
-    all_ids = {creator_id, *member_ids}
-    db.add_all([
-        ConversationMember(conversation_id=conv.id, user_id=uid) for uid in all_ids
-    ])
+    # 建立者設為 admin，受邀成員設為 member（去重）
+    members: list[ConversationMember] = [
+        ConversationMember(conversation_id=conv.id, user_id=creator_id, role="admin")
+    ]
+    for uid in member_ids:
+        if uid != creator_id:
+            members.append(ConversationMember(conversation_id=conv.id, user_id=uid, role="member"))
+    db.add_all(members)
     await db.flush()
     return conv
 
@@ -151,6 +154,16 @@ async def get_reaction_groups(
         ReactionGroupOut(emoji=e, count=len(uids), user_ids=uids)
         for e, uids in by_emoji.items()
     ]
+
+
+async def get_role_map(db: AsyncSession, conversation_id: uuid.UUID) -> dict[uuid.UUID, str]:
+    """回傳該對話 user_id → role 對照。"""
+    rows = await db.execute(
+        select(ConversationMember.user_id, ConversationMember.role).where(
+            ConversationMember.conversation_id == conversation_id
+        )
+    )
+    return {uid: role for uid, role in rows.all()}
 
 
 async def are_friends(db: AsyncSession, a: uuid.UUID, b: uuid.UUID) -> bool:

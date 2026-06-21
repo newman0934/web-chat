@@ -54,6 +54,7 @@ async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
         "edited_at": msg.edited_at.astimezone(timezone.utc).isoformat() if msg.edited_at else None,
         "deleted": deleted,
         "reactions": [g.model_dump(mode="json") for g in groups],
+        "kind": msg.kind,
     }
 
 

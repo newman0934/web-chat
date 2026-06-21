@@ -17,6 +17,7 @@ from app.services.conversations import (
     get_conversation_for_member,
     get_member_ids,
     get_reaction_groups,
+    get_role_map,
     read_count,
     unread_count,
 )
@@ -46,8 +47,10 @@ async def _build_conversation_out(
             id=last.id, conversation_id=last.conversation_id, sender_id=last.sender_id,
             content=last.content, created_at=last.created_at,
             read_count=await read_count(db, last.id),
+            kind=last.kind,
         )
 
+    roles = await get_role_map(db, conv.id)
     return ConversationOut(
         id=conv.id,
         type=conv.type,
@@ -56,6 +59,7 @@ async def _build_conversation_out(
         members=[UserOut.model_validate(u) for u in members],
         last_message=last_out,
         unread_count=await unread_count(db, conv.id, me.id),
+        roles=roles,
     )
 
 
@@ -134,6 +138,7 @@ async def list_messages(
                 edited_at=m.edited_at,
                 deleted=deleted,
                 reactions=groups,
+                kind=m.kind,
             )
         )
     return out

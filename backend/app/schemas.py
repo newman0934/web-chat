@@ -79,6 +79,7 @@ class MessageOut(BaseModel):
     edited_at: datetime | None = None
     deleted: bool = False
     reactions: list[ReactionGroupOut] = Field(default_factory=list)
+    kind: str = "user"
 
 
 class GroupCreateRequest(BaseModel):
@@ -94,3 +95,4 @@ class ConversationOut(BaseModel):
     members: list[UserOut] = Field(default_factory=list)
     last_message: MessageOut | None = None
     unread_count: int = 0
+    roles: dict[uuid.UUID, str] = Field(default_factory=dict)
