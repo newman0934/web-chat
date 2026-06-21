@@ -79,8 +79,14 @@ class MessageOut(BaseModel):
     attachment: AttachmentOut | None = None
     edited_at: datetime | None = None
     deleted: bool = False
+    deleted_at: datetime | None = None
     reactions: list[ReactionGroupOut] = Field(default_factory=list)
     kind: str = "user"
+
+
+class MessageVersionOut(BaseModel):
+    content: str
+    created_at: datetime
 
 
 class GroupCreateRequest(BaseModel):

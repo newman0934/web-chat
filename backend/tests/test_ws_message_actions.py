@@ -72,7 +72,7 @@ async def test_react_invalid_emoji(client, register_user, auth_headers, session_
     alice, bob, conv_id, mid = await _pair_with_message(client, register_user, auth_headers, session_factory)
     with TestClient(app) as tc:
         with tc.websocket_connect(f"/ws?token={bob}") as wb:
-            wb.send_json({"type": "react", "message_id": mid, "emoji": "🦄"})
+            wb.send_json({"type": "react", "message_id": mid, "emoji": "lol"})
             assert wb.receive_json()["reason"] == "invalid_reaction"
 
 

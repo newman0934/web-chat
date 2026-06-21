@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import auth, contacts, conversations, uploads, users
+from app.routers import auth, contacts, conversations, messages, uploads, users
 from app.ws import router as ws_router
 
 settings = get_settings()
@@ -25,6 +25,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(contacts.router)
 app.include_router(conversations.router)
+app.include_router(messages.router)
 app.include_router(uploads.router)
 app.include_router(ws_router.router)
 

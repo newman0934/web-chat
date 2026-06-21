@@ -2,12 +2,24 @@
 
 > 給接手的 session：先讀本檔 → 讀 [CLAUDE.md](CLAUDE.md) → 需要時讀設計文件
 > [docs/superpowers/specs/2026-06-19-chat-web-mvp-design.md](docs/superpowers/specs/2026-06-19-chat-web-mvp-design.md)。
-> 最後更新：2026-06-20
+> 最後更新：2026-06-21
 
 ## 一句話現況
 
-MVP + **群組聊天** + **圖片/檔案附件** + **訊息編輯/刪除/表情回應** + **語音/視訊通話（1對1，WebRTC P2P）**（皆最小可用）已實作完成、前後端測試全綠。
-群組功能在 `feat/group-chat`；附件功能已併入 group-chat；訊息動作在 `feat/message-actions`（從 group-chat 切出）；語音/視訊通話在 `feat/message-actions`（子任務追加）。皆採 subagent-driven 逐 task 完成並 review。
+MVP + **群組聊天** + **圖片/檔案附件** + **訊息編輯/刪除/表情回應** + **語音/視訊通話（1對1，WebRTC P2P）** + **群組管理（成員/角色/改名）** + **訊息動作小增強（編輯歷史/時限、自由 emoji、還原刪除）**（皆最小可用）已實作完成、前後端測試全綠。
+全部疊在 `feat/group-chat` 整合分支上（各功能各自切支、review 後 `--no-ff` 併回）；`main` 仍保留在後（使用者選擇稍後處理）。皆採 subagent-driven 逐 task 完成並 review。
+
+## 訊息動作小增強（2026-06-21 完成，feat/message-actions-enhancements 分支）
+
+- 在既有 edit/delete/react 上補三項：**編輯歷史/版本紀錄 + 15 分鐘編輯時限**、**自由 emoji 選擇器（快速 6 + emoji-mart 完整選擇器）**、**寄件人 5 分鐘內還原已刪除訊息**。見 [小增強設計](docs/superpowers/specs/2026-06-21-message-actions-enhancements-design.md)。
+- 資料：新表 `MessageEdit`（編輯前快照，migration 0007）；刪除改為**非破壞性**（DB 保留 content、輸出層遮蔽），還原即清 `deleted_at`；`MessageOut` 加 `deleted_at`。
+- 端點：WS 新增 `restore`；REST 新增 `GET /messages/{id}/edits`（成員 only 404、已刪 403，回各版本+目前）。表情驗證由固定白名單改為「單一 emoji」形狀（≤8 codepoints、無 ASCII 英數/空白）。
+- 時窗（15min 編輯 / 5min 還原）後端強制；前端常數僅控制按鈕顯隱。
+- 後端 pytest 88 passed；前端 chat vitest 54 passed、tsc 乾淨、build OK（emoji-mart ~700KB 進 chat 包）。
+- 最終全分支 review（opus）：Ready to merge — 內容洩漏面全數遮蔽（含回歸測試，曾於 loop 內抓到並修掉 `_build_conversation_out.last_message` 洩漏）。
+- follow-up（不擋合併）：`is_valid_reaction_emoji` 為粗略啟發式（CJK/符號 ≤8cp 也會過）；EditHistoryPopover 用 index key；emoji-mart bundle 偏大可日後 lazy-load。
+- E2E：手動（兩帳號：編輯→看歷史→超時不可編輯；刪除→5 分鐘內還原；按白名單外 emoji）。
+- **新流程提醒**：CLAUDE.md 已加入嚴格 SDD workflow（BDD + Playwright + `<feature>/` 目錄 + approval gate），**從下一個功能才開始套用**；本功能維持 superpowers brainstorming→plan→subagent 流程跑完（使用者決定）。
 
 ## 群組管理（成員/角色/改名）（2026-06-21 完成，feat/message-actions 分支）
 

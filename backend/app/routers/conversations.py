@@ -48,10 +48,13 @@ async def _build_conversation_out(
     last = last_res.scalar_one_or_none()
     last_out = None
     if last is not None:
+        is_last_deleted = last.deleted_at is not None
         last_out = MessageOut(
             id=last.id, conversation_id=last.conversation_id, sender_id=last.sender_id,
-            content=last.content, created_at=last.created_at,
+            content="" if is_last_deleted else last.content, created_at=last.created_at,
             read_count=await read_count(db, last.id),
+            deleted=is_last_deleted,
+            deleted_at=last.deleted_at,
             kind=last.kind,
         )
 
@@ -142,6 +145,7 @@ async def list_messages(
                 attachment=AttachmentOut.model_validate(att) if att else None,
                 edited_at=m.edited_at,
                 deleted=deleted,
+                deleted_at=m.deleted_at,
                 reactions=groups,
                 kind=m.kind,
             )
@@ -161,6 +165,7 @@ def _system_message_payload(msg: Message) -> dict:
         "attachment": None,
         "edited_at": None,
         "deleted": False,
+        "deleted_at": None,
         "reactions": [],
         "kind": "system",
     }

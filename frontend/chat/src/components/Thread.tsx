@@ -3,9 +3,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { QUICK_REACTIONS } from '../../../contracts';
-import type { Attachment } from '../../../contracts';
+import Picker from '@emoji-mart/react';
+import data from '@emoji-mart/data';
+
+import { EDIT_WINDOW_MS, QUICK_REACTIONS, RESTORE_WINDOW_MS } from '../../../contracts';
+import type { Attachment, MessageVersion } from '../../../contracts';
 import type { ChatMessage } from '../messageStore';
+import { EditHistoryPopover } from './EditHistoryPopover';
 
 interface ThreadProps {
   title: string;
@@ -22,6 +26,8 @@ interface ThreadProps {
   onEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
   onReact: (id: string, emoji: string) => void;
+  onRestore?: (id: string) => void;
+  loadEditHistory?: (id: string) => Promise<MessageVersion[]>;
   onStartCall?: () => void;
   onShowGroupInfo?: () => void;
 }
@@ -42,6 +48,8 @@ export function Thread({
   onEdit,
   onDelete,
   onReact,
+  onRestore = () => {},
+  loadEditHistory = async () => [],
   onStartCall,
   onShowGroupInfo,
 }: ThreadProps) {
@@ -128,6 +136,8 @@ export function Thread({
             onEdit={onEdit}
             onDelete={onDelete}
             onReact={onReact}
+            onRestore={onRestore}
+            loadEditHistory={loadEditHistory}
           />
         ))}
         <div ref={bottomRef} />
@@ -185,21 +195,30 @@ export function Thread({
   );
 }
 
-/** 小元件：快速表情選擇器，點「＋」展開 QUICK_REACTIONS。 */
+/** 表情選擇器：快速 6 個 + 「更多表情」開 emoji-mart 完整選擇器。 */
 function ReactionPicker({ onPick }: { onPick: (emoji: string) => void }) {
   const [open, setOpen] = useState(false);
+  const [full, setFull] = useState(false);
   return (
     <span className="relative">
       <button
         type="button"
         aria-label="新增表情"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v); setFull(false); }}
         className="rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-500 hover:bg-slate-200"
       >
         ＋
       </button>
+      <button
+        type="button"
+        aria-label="更多表情"
+        onClick={() => { setFull((v) => !v); setOpen(false); }}
+        className="rounded px-1 text-slate-400 hover:bg-slate-100 text-xs"
+      >
+        ⋯
+      </button>
       {open && (
-        <span className="absolute bottom-full left-0 z-10 mb-1 flex gap-1 rounded-xl bg-white p-1 shadow-lg">
+        <span className="absolute bottom-full left-0 z-10 mb-1 flex items-center gap-1 rounded-xl bg-white p-1 shadow-lg">
           {QUICK_REACTIONS.map((e) => (
             <button
               key={e}
@@ -212,6 +231,14 @@ function ReactionPicker({ onPick }: { onPick: (emoji: string) => void }) {
           ))}
         </span>
       )}
+      {full && (
+        <span className="absolute bottom-full left-0 z-20 mb-1">
+          <Picker
+            data={data}
+            onEmojiSelect={(e: { native: string }) => { onPick(e.native); setFull(false); }}
+          />
+        </span>
+      )}
     </span>
   );
 }
@@ -219,7 +246,7 @@ function ReactionPicker({ onPick }: { onPick: (emoji: string) => void }) {
 /** 單則訊息泡泡：區分我方/對方，我方顯示傳送狀態與重試。 */
 function MessageBubble({
   message, mine, isGroup, senderName, onRetry, attachmentUrl,
-  currentUserId, onEdit, onDelete, onReact,
+  currentUserId, onEdit, onDelete, onReact, onRestore, loadEditHistory,
 }: {
   message: ChatMessage; mine: boolean; isGroup: boolean;
   senderName?: string; onRetry: (tempId: string) => void;
@@ -228,9 +255,12 @@ function MessageBubble({
   onEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
   onReact: (id: string, emoji: string) => void;
+  onRestore: (id: string) => void;
+  loadEditHistory: (id: string) => Promise<MessageVersion[]>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
 
   // 系統訊息：置中灰字一行，無泡泡 / 狀態 / 編輯刪除 / 表情。
   if (message.kind === 'system') {
@@ -243,20 +273,32 @@ function MessageBubble({
     );
   }
 
-  // 已刪除：整個泡泡換成佔位
+  // 已刪除：整個泡泡換成佔位，寄件人且在還原時窗內顯示還原鈕
   if (message.deleted) {
+    const canRestore =
+      mine && message.deleted_at != null &&
+      Date.now() - new Date(message.deleted_at).getTime() < RESTORE_WINDOW_MS;
     return (
-      <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+      <div className={`flex items-center gap-2 ${mine ? 'justify-end' : 'justify-start'}`}>
         <div className="max-w-[70%] rounded-2xl bg-slate-100 px-4 py-2 text-sm italic text-slate-400">
           此訊息已刪除
         </div>
+        {canRestore && (
+          <button
+            type="button"
+            onClick={() => onRestore(message.id)}
+            className="text-xs text-indigo-600 underline"
+          >
+            還原
+          </button>
+        )}
       </div>
     );
   }
 
   return (
     <div className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-      <div className={`max-w-[70%] rounded-2xl px-4 py-2 ${mine ? 'bg-indigo-600 text-white' : 'bg-white text-slate-800 shadow'}`}>
+      <div className={`relative max-w-[70%] rounded-2xl px-4 py-2 ${mine ? 'bg-indigo-600 text-white' : 'bg-white text-slate-800 shadow'}`}>
         {isGroup && !mine && senderName && (
           <p className="mb-0.5 text-xs font-medium text-indigo-500">{senderName}</p>
         )}
@@ -284,7 +326,11 @@ function MessageBubble({
         <p className="whitespace-pre-wrap break-words">{message.content}</p>
         {mine && (
           <p className="mt-1 text-right text-xs opacity-80">
-            {message.edited_at && <span className="text-xs opacity-70">已編輯</span>}
+            {message.edited_at && (
+              <button type="button" onClick={() => setShowHistory((v) => !v)} className="mr-1 underline opacity-70">
+                已編輯
+              </button>
+            )}
             {message.status === 'sending' && '傳送中…'}
             {message.status === 'sent' && (
               isGroup
@@ -299,7 +345,16 @@ function MessageBubble({
           </p>
         )}
         {!mine && message.edited_at && (
-          <p className="mt-0.5 text-xs opacity-70">已編輯</p>
+          <button type="button" onClick={() => setShowHistory((v) => !v)} className="mt-0.5 text-xs underline opacity-70">
+            已編輯
+          </button>
+        )}
+        {showHistory && (
+          <EditHistoryPopover
+            messageId={message.id}
+            load={loadEditHistory}
+            onClose={() => setShowHistory(false)}
+          />
         )}
       </div>
 
@@ -320,7 +375,7 @@ function MessageBubble({
         <ReactionPicker onPick={(e) => onReact(message.id, e)} />
       </div>
 
-      {/* 自己、已送達（sent）且未刪：編輯/刪除（樂觀訊息尚未落庫，不顯示） */}
+      {/* 自己、已送達（sent）且未刪：刪除恆顯示；編輯僅 15 分鐘內 */}
       {mine && message.status === 'sent' && (
         editing ? (
           <form
@@ -343,12 +398,14 @@ function MessageBubble({
           </form>
         ) : (
           <div className="mt-0.5 flex gap-2 text-xs opacity-70">
-            <button
-              type="button"
-              onClick={() => { setDraft(message.content); setEditing(true); }}
-            >
-              編輯
-            </button>
+            {Date.now() - new Date(message.created_at).getTime() < EDIT_WINDOW_MS && (
+              <button
+                type="button"
+                onClick={() => { setDraft(message.content); setEditing(true); }}
+              >
+                編輯
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onDelete(message.id)}
