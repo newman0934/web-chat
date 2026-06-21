@@ -2,11 +2,12 @@
 // 職責：組裝 Sidebar + Thread，串接 REST（ApiClient）與 WebSocket（useChatSocket）。
 // 狀態集中在 zustand（useChatStore）；本元件只負責副作用（fetch / ws.send）與把 store 接到 UI。
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ChatAppProps, ServerWsMessage } from '../../contracts';
 import { ApiClient, ApiError, UnauthorizedError } from './api';
 import { CallOverlay } from './components/CallOverlay';
+import { GroupInfoPanel } from './components/GroupInfoPanel';
 import { Sidebar } from './components/Sidebar';
 import { Thread } from './components/Thread';
 import { useCall } from './useCall';
@@ -283,6 +284,21 @@ export default function ChatApp({
     [api, loadConversations, onLogout],
   );
 
+  const [showInfo, setShowInfo] = useState(false);
+
+  const runGroupOp = useCallback(
+    async (op: () => Promise<unknown>) => {
+      try {
+        await op();
+        await loadConversations();
+      } catch (err) {
+        if (err instanceof UnauthorizedError) { onLogout(); return; }
+        if (err instanceof ApiError) alert(err.message);
+      }
+    },
+    [loadConversations, onLogout],
+  );
+
   const activeConv = conversations.find((c) => c.id === activeId) ?? null;
   const otherUser = activeConv && activeConv.type === 'direct' ? activeConv.other_user : null;
   const startCall = useCallback(() => {
@@ -328,11 +344,25 @@ export default function ChatApp({
           onDelete={deleteMessage}
           onReact={toggleReaction}
           onStartCall={otherUser ? startCall : undefined}
+          onShowGroupInfo={isGroup ? () => setShowInfo(true) : undefined}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center text-slate-400">
           選擇一個對話開始聊天
         </div>
+      )}
+      {showInfo && isGroup && activeConv && (
+        <GroupInfoPanel
+          conversation={activeConv}
+          currentUserId={currentUser.id}
+          contacts={contacts}
+          onAddMember={(opts) => runGroupOp(() => api.addMember(activeConv.id, opts))}
+          onRemoveMember={(uid) => runGroupOp(() => api.removeMember(activeConv.id, uid))}
+          onSetRole={(uid, role) => runGroupOp(() => api.setMemberRole(activeConv.id, uid, role))}
+          onRename={(name) => runGroupOp(() => api.renameGroup(activeConv.id, name))}
+          onLeave={() => runGroupOp(async () => { await api.leaveGroup(activeConv.id); setShowInfo(false); })}
+          onClose={() => setShowInfo(false)}
+        />
       )}
       <CallOverlay
         status={call.callState}
