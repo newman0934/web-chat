@@ -1,0 +1,186 @@
+/**
+ * E2E 測試共用輔助函式。
+ *
+ * 所有 REST 互動（register / login / addContact / getConversations 等）
+ * 直接走 http://localhost:8000 API，不透過 UI，速度快且不依賴 UI 細節。
+ */
+
+import { APIRequestContext, Page } from "@playwright/test";
+
+const API = "http://localhost:8000";
+
+// ── REST helpers ──────────────────────────────────────────────────────────────
+
+/** 建立測試用帳號，回傳 JWT token。若 email 已存在（409）則改用 login。 */
+export async function apiRegister(
+  request: APIRequestContext,
+  email: string,
+  displayName: string,
+  password = "TestPass123!"
+): Promise<string> {
+  const res = await request.post(`${API}/auth/register`, {
+    data: { email, display_name: displayName, password },
+  });
+  if (res.status() === 201) {
+    const body = await res.json();
+    return body.access_token as string;
+  }
+  if (res.status() === 409) {
+    // 已存在 → login
+    return apiLogin(request, email, password);
+  }
+  throw new Error(
+    `apiRegister failed: ${res.status()} ${await res.text()}`
+  );
+}
+
+/** 登入並回傳 JWT token。 */
+export async function apiLogin(
+  request: APIRequestContext,
+  email: string,
+  password = "TestPass123!"
+): Promise<string> {
+  const res = await request.post(`${API}/auth/login`, {
+    data: { email, password },
+  });
+  if (!res.ok()) throw new Error(`apiLogin failed: ${res.status()} ${await res.text()}`);
+  const body = await res.json();
+  return body.access_token as string;
+}
+
+/** 加好友（idempotent — 409 視為成功）。 */
+export async function apiAddContact(
+  request: APIRequestContext,
+  token: string,
+  targetEmail: string
+): Promise<{ conversation_id: string }> {
+  const res = await request.post(`${API}/contacts`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { email: targetEmail },
+  });
+  if (res.status() === 201) return res.json();
+  if (res.status() === 409) {
+    // 已是好友 — 從清單撈對話 id
+    const contacts = await apiGetContacts(request, token);
+    const found = contacts.find((c: any) => c.email === targetEmail);
+    if (found) return { conversation_id: found.conversation_id };
+  }
+  throw new Error(`apiAddContact failed: ${res.status()} ${await res.text()}`);
+}
+
+/** 取好友清單。 */
+export async function apiGetContacts(
+  request: APIRequestContext,
+  token: string
+): Promise<any[]> {
+  const res = await request.get(`${API}/contacts`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok()) throw new Error(`apiGetContacts failed: ${res.status()}`);
+  return res.json();
+}
+
+/** 取對話歷史，回傳訊息陣列（最新在後）。 */
+export async function apiGetMessages(
+  request: APIRequestContext,
+  token: string,
+  conversationId: string,
+  limit = 50
+): Promise<any[]> {
+  const res = await request.get(
+    `${API}/conversations/${conversationId}/messages?limit=${limit}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok()) throw new Error(`apiGetMessages failed: ${res.status()}`);
+  return res.json();
+}
+
+// ── WebSocket helper ──────────────────────────────────────────────────────────
+
+/**
+ * 在瀏覽器內建立 WebSocket 連線，送出訊息並等待指定類型的回應。
+ *
+ * 因為 Node 端 `ws` 套件在 Playwright 環境下需要額外設定 SSL，
+ * 這裡改用 `page.evaluate` 在瀏覽器內建原生 WebSocket，藉以迴避跨環境問題。
+ */
+export async function wsRequest(
+  page: Page,
+  token: string,
+  payload: object,
+  waitForType: string,
+  timeoutMs = 8000
+): Promise<any> {
+  return page.evaluate(
+    async ({ token, payload, waitForType, timeoutMs, apiUrl }) => {
+      const wsUrl = `${apiUrl.replace("http", "ws")}/ws?token=${token}`;
+      return new Promise<any>((resolve, reject) => {
+        const ws = new WebSocket(wsUrl);
+        const timer = setTimeout(() => {
+          ws.close();
+          reject(new Error(`wsRequest timeout waiting for type="${waitForType}"`));
+        }, timeoutMs);
+
+        ws.onopen = () => {
+          ws.send(JSON.stringify(payload));
+        };
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.type === waitForType || (waitForType === "error" && msg.type === "error")) {
+              clearTimeout(timer);
+              ws.close();
+              resolve(msg);
+            }
+          } catch (_) {}
+        };
+        ws.onerror = (e) => {
+          clearTimeout(timer);
+          reject(new Error("WebSocket error"));
+        };
+      });
+    },
+    { token, payload, waitForType, timeoutMs, apiUrl: API }
+  );
+}
+
+/**
+ * 透過 WebSocket 送一則 text 訊息，等待 ack 並回傳訊息物件。
+ * 這是 "Alice sends a message over WS" 的標準流程。
+ */
+export async function wsSendMessage(
+  page: Page,
+  token: string,
+  conversationId: string,
+  content: string
+): Promise<any> {
+  const ack = await wsRequest(
+    page,
+    token,
+    {
+      type: "message",
+      conversation_id: conversationId,
+      content,
+      temp_id: `tmp-${Date.now()}`,
+    },
+    "ack"
+  );
+  return ack.message;
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * 透過 shell UI 完成登入流程。
+ * shell 在 / 時若無 token → 重導到 /login，auth remote 掛在 /login。
+ */
+export async function uiLogin(page: Page, email: string, password = "TestPass123!") {
+  await page.goto("/");
+  // 等待 auth remote 載入（Module Federation 非同步）
+  await page.waitForURL("**/login", { timeout: 15_000 });
+  await page.waitForSelector("input[type=email]", { timeout: 15_000 });
+  await page.fill("input[type=email]", email);
+  await page.fill("input[type=password]", password);
+  await page.click("button[type=submit]");
+  // 登入成功後 shell 回到 /
+  await page.waitForURL("/", { timeout: 15_000 });
+}
