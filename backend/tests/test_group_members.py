@@ -25,7 +25,6 @@ async def test_admin_adds_member_by_email_nonfriend(client, register_user, auth_
     resp = await client.post(f"/conversations/{conv_id}/members",
             json={"email": "gmc@example.com"}, headers=auth_headers(alice))
     assert resp.status_code == 200, resp.text
-    cid = (await client.get("/users/me", headers=auth_headers(await register_user("gmc2@example.com", "X")))).json()  # noqa: not used
     body = resp.json()
     emails = {m["email"] for m in body["members"]}
     assert "gmc@example.com" in emails
