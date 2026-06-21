@@ -69,6 +69,44 @@ export class ApiClient {
     );
   }
 
+  /** 加成員（user_id 好友快選 或 email 加非好友）。回更新後的 Conversation。 */
+  addMember(conversationId: string, opts: { userId?: string; email?: string }) {
+    return this.req<Conversation>(`/conversations/${conversationId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: opts.userId, email: opts.email }),
+    });
+  }
+
+  /** 移除成員（admin）。回更新後的 Conversation。 */
+  removeMember(conversationId: string, userId: string) {
+    return this.req<Conversation>(`/conversations/${conversationId}/members/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /** 退出群組。 */
+  leaveGroup(conversationId: string) {
+    return this.req<{ ok: boolean }>(`/conversations/${conversationId}/leave`, {
+      method: 'POST',
+    });
+  }
+
+  /** 群組改名（admin）。 */
+  renameGroup(conversationId: string, name: string) {
+    return this.req<Conversation>(`/conversations/${conversationId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  /** 設定成員角色（admin）。 */
+  setMemberRole(conversationId: string, userId: string, role: 'admin' | 'member') {
+    return this.req<Conversation>(`/conversations/${conversationId}/members/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    });
+  }
+
   /** 上傳單一檔案，回附件中繼資料。不手動設 Content-Type，讓瀏覽器帶 multipart boundary。 */
   async uploadFile(file: File): Promise<Attachment> {
     const form = new FormData();
