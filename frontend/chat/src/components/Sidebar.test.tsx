@@ -11,7 +11,7 @@ const groupConv: Conversation = {
     { id: 'u2', email: 'b@x.com', display_name: 'B' },
     { id: 'u3', email: 'c@x.com', display_name: 'C' },
   ],
-  last_message: null, unread_count: 0,
+  last_message: null, unread_count: 0, roles: {},
 };
 
 function renderSidebar(over = {}) {

@@ -50,6 +50,9 @@ interface ChatState {
   /** 收到 message_updated 事件：依 id 取代該對話內對應訊息。 */
   updateMessage: (message: Message) => void;
 
+  /** 移除某對話（被踢/退出/群解散）；清掉其訊息與 hasMore，若為 active 則切回空畫面。 */
+  removeConversation: (conversationId: string) => void;
+
   /** 重置成初始狀態（登入切換 / 卸載時呼叫，避免殘留上一位使用者資料）。 */
   reset: () => void;
 }
@@ -162,6 +165,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const list = s.messages[convId];
       if (!list) return s;
       return { messages: { ...s.messages, [convId]: applyMessageUpdate(list, message) } };
+    }),
+
+  removeConversation: (conversationId) =>
+    set((s) => {
+      const messages = { ...s.messages };
+      delete messages[conversationId];
+      const hasMore = { ...s.hasMore };
+      delete hasMore[conversationId];
+      return {
+        conversations: s.conversations.filter((c) => c.id !== conversationId),
+        messages,
+        hasMore,
+        activeId: s.activeId === conversationId ? null : s.activeId,
+      };
     }),
 
   reset: () => set({ ...initialState }),

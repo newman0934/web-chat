@@ -23,6 +23,7 @@ interface ThreadProps {
   onDelete: (id: string) => void;
   onReact: (id: string, emoji: string) => void;
   onStartCall?: () => void;
+  onShowGroupInfo?: () => void;
 }
 
 /** 右側對話視窗：訊息列表、載入更多、輸入框與送出。 */
@@ -42,6 +43,7 @@ export function Thread({
   onDelete,
   onReact,
   onStartCall,
+  onShowGroupInfo,
 }: ThreadProps) {
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<Attachment | null>(null);
@@ -78,16 +80,28 @@ export function Thread({
     <section className="flex h-full flex-1 flex-col bg-slate-50">
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
         <h2 className="font-semibold text-slate-800">{title}</h2>
-        {onStartCall && (
-          <button
-            type="button"
-            aria-label="視訊通話"
-            onClick={onStartCall}
-            className="rounded-lg px-3 py-1 text-lg hover:bg-slate-100"
-          >
-            📞
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {onStartCall && (
+            <button
+              type="button"
+              aria-label="視訊通話"
+              onClick={onStartCall}
+              className="rounded-lg px-3 py-1 text-lg hover:bg-slate-100"
+            >
+              📞
+            </button>
+          )}
+          {onShowGroupInfo && (
+            <button
+              type="button"
+              aria-label="群組資訊"
+              onClick={onShowGroupInfo}
+              className="rounded-lg px-3 py-1 text-lg hover:bg-slate-100"
+            >
+              ⓘ
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-6 py-4">
@@ -217,6 +231,17 @@ function MessageBubble({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+
+  // 系統訊息：置中灰字一行，無泡泡 / 狀態 / 編輯刪除 / 表情。
+  if (message.kind === 'system') {
+    return (
+      <div className="flex justify-center">
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
+          {message.content}
+        </span>
+      </div>
+    );
+  }
 
   // 已刪除：整個泡泡換成佔位
   if (message.deleted) {

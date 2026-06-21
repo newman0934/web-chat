@@ -60,11 +60,14 @@ async def create_group_conversation(
     conv = Conversation(type="group", name=name, creator_id=creator_id)
     db.add(conv)
     await db.flush()
-    # 建立者 + 受邀成員（去重）
-    all_ids = {creator_id, *member_ids}
-    db.add_all([
-        ConversationMember(conversation_id=conv.id, user_id=uid) for uid in all_ids
-    ])
+    # 建立者設為 admin，受邀成員設為 member（去重）
+    members: list[ConversationMember] = [
+        ConversationMember(conversation_id=conv.id, user_id=creator_id, role="admin")
+    ]
+    for uid in member_ids:
+        if uid != creator_id:
+            members.append(ConversationMember(conversation_id=conv.id, user_id=uid, role="member"))
+    db.add_all(members)
     await db.flush()
     return conv
 
@@ -153,6 +156,16 @@ async def get_reaction_groups(
     ]
 
 
+async def get_role_map(db: AsyncSession, conversation_id: uuid.UUID) -> dict[uuid.UUID, str]:
+    """回傳該對話 user_id → role 對照。"""
+    rows = await db.execute(
+        select(ConversationMember.user_id, ConversationMember.role).where(
+            ConversationMember.conversation_id == conversation_id
+        )
+    )
+    return {uid: role for uid, role in rows.all()}
+
+
 async def are_friends(db: AsyncSession, a: uuid.UUID, b: uuid.UUID) -> bool:
     """雙方是否為好友。加好友為雙向建立兩筆 Contact，故查單向即足。"""
     result = await db.execute(
@@ -162,3 +175,52 @@ async def are_friends(db: AsyncSession, a: uuid.UUID, b: uuid.UUID) -> bool:
         )
     )
     return result.scalar_one_or_none() is not None
+
+
+async def get_member(
+    db: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID
+) -> ConversationMember | None:
+    res = await db.execute(
+        select(ConversationMember).where(
+            ConversationMember.conversation_id == conversation_id,
+            ConversationMember.user_id == user_id,
+        )
+    )
+    return res.scalar_one_or_none()
+
+
+async def is_group_admin(
+    db: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID
+) -> bool:
+    m = await get_member(db, conversation_id, user_id)
+    return m is not None and m.role == "admin"
+
+
+async def create_system_message(
+    db: AsyncSession, conversation_id: uuid.UUID, sender_id: uuid.UUID, content: str
+) -> Message:
+    msg = Message(
+        conversation_id=conversation_id, sender_id=sender_id, content=content, kind="system"
+    )
+    db.add(msg)
+    await db.flush()
+    return msg
+
+
+async def would_leave_groupless_of_admin(
+    db: AsyncSession,
+    conversation_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    removing: bool = False,
+    new_role: str | None = None,
+) -> bool:
+    """模擬把 user_id 移除 / 改成 new_role 後，群組是否仍有成員卻 0 個 admin。"""
+    role_map = await get_role_map(db, conversation_id)
+    if removing:
+        role_map.pop(user_id, None)
+    elif new_role is not None:
+        role_map[user_id] = new_role
+    if not role_map:
+        return False  # 群空交由刪群邏輯處理
+    return not any(r == "admin" for r in role_map.values())

@@ -5,6 +5,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -79,11 +80,25 @@ class MessageOut(BaseModel):
     edited_at: datetime | None = None
     deleted: bool = False
     reactions: list[ReactionGroupOut] = Field(default_factory=list)
+    kind: str = "user"
 
 
 class GroupCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     member_user_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class AddMemberRequest(BaseModel):
+    user_id: uuid.UUID | None = None
+    email: EmailStr | None = None
+
+
+class GroupRenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class RoleUpdateRequest(BaseModel):
+    role: Literal["admin", "member"]
 
 
 class ConversationOut(BaseModel):
@@ -94,3 +109,4 @@ class ConversationOut(BaseModel):
     members: list[UserOut] = Field(default_factory=list)
     last_message: MessageOut | None = None
     unread_count: int = 0
+    roles: dict[uuid.UUID, str] = Field(default_factory=dict)

@@ -29,6 +29,7 @@ function conv(id: string, unread: number): Conversation {
     members: [],
     last_message: null,
     unread_count: unread,
+    roles: {},
   };
 }
 
@@ -97,5 +98,36 @@ describe('useChatStore', () => {
     s.loadHistory('c1', [realMsg('m1')]);
     s.updateMessage({ ...realMsg('m1'), content: 'edited', conversation_id: 'c1' });
     expect(useChatStore.getState().messages['c1'][0].content).toBe('edited');
+  });
+});
+
+function convG(id: string): Conversation {
+  return {
+    id, type: 'group', name: 'G', other_user: null, members: [],
+    last_message: null, unread_count: 0, roles: {},
+  };
+}
+
+describe('removeConversation', () => {
+  beforeEach(() => useChatStore.getState().reset());
+
+  it('移除對話並清掉其訊息；若為 active 則清空 activeId', () => {
+    const st = useChatStore.getState();
+    st.setConversations([convG('c1'), convG('c2')]);
+    st.loadHistory('c1', []);
+    st.setActiveId('c1');
+    st.removeConversation('c1');
+    const s = useChatStore.getState();
+    expect(s.conversations.map((c) => c.id)).toEqual(['c2']);
+    expect(s.messages['c1']).toBeUndefined();
+    expect(s.activeId).toBeNull();
+  });
+
+  it('移除非 active 對話不動 activeId', () => {
+    const st = useChatStore.getState();
+    st.setConversations([convG('c1'), convG('c2')]);
+    st.setActiveId('c2');
+    st.removeConversation('c1');
+    expect(useChatStore.getState().activeId).toBe('c2');
   });
 });

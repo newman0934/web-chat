@@ -63,6 +63,7 @@ export interface Message {
   edited_at: string | null;
   deleted: boolean;
   reactions: ReactionGroup[];
+  kind?: 'user' | 'system';
 }
 
 export type AttachmentOut = Attachment;
@@ -75,6 +76,7 @@ export interface Conversation {
   members: CurrentUser[];
   last_message: Message | null;
   unread_count: number;
+  roles: Record<string, 'admin' | 'member'>;
 }
 
 export interface GroupCreateRequest {
@@ -114,4 +116,6 @@ export type ServerWsMessage =
   | { type: 'call_ice'; from: CallFrom; candidate: RTCIceCandidateInit }
   | { type: 'call_reject'; from: CallFrom }
   | { type: 'call_hangup'; from: CallFrom }
-  | { type: 'call_unavailable'; to_user_id: string };
+  | { type: 'call_unavailable'; to_user_id: string }
+  | { type: 'conversation_updated'; conversation_id: string }
+  | { type: 'conversation_removed'; conversation_id: string };

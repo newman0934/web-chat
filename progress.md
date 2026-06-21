@@ -9,6 +9,15 @@
 MVP + **群組聊天** + **圖片/檔案附件** + **訊息編輯/刪除/表情回應** + **語音/視訊通話（1對1，WebRTC P2P）**（皆最小可用）已實作完成、前後端測試全綠。
 群組功能在 `feat/group-chat`；附件功能已併入 group-chat；訊息動作在 `feat/message-actions`（從 group-chat 切出）；語音/視訊通話在 `feat/message-actions`（子任務追加）。皆採 subagent-driven 逐 task 完成並 review。
 
+## 群組管理（成員/角色/改名）（2026-06-21 完成，feat/message-actions 分支）
+
+- 功能：群組改名、加入成員（從好友快選或 email 加非好友）、移除成員、升/降管理員角色、退出群組。
+- 架構：`GroupInfoPanel.tsx`（側拉面板）→ `Thread.tsx`（header ⓘ 鈕，`onShowGroupInfo` prop）→ `ChatApp.tsx`（`showInfo` state + `runGroupOp` helper）。ApiClient 四個方法（`addMember`/`removeMember`/`leaveGroup`/`renameGroup`/`setMemberRole`）。
+- WS 通知：每次群組操作後後端廣播 `conversation_updated`（或 `conversation_removed` 給被移除/退出成員），前端 `loadConversations` 補刷清單與成員列；被移除端對話即時消失。
+- 不變式（後端守門）：最後一位 admin 無法退出或被降級；移除非成員回 404；只有 admin 可執行管理操作（403）。
+- E2E：手動驗證（兩/三帳號；步驟見 task-7-brief.md Step 8）。
+- 前端 vitest：46 passed（含 GroupInfoPanel 2）；chat + shell tsc 乾淨。
+
 ## 語音/視訊通話（2026-06-21 完成，feat/message-actions 分支）
 
 - 1對1 WebRTC P2P 通話，訊號（offer/answer/ICE/reject/hangup）走現有 WebSocket 中繼，媒體流不經後端。

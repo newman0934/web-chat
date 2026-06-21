@@ -203,4 +203,27 @@ describe('Thread', () => {
     fireEvent.click(screen.getByRole('button', { name: '刪除' }));
     expect(onDelete).toHaveBeenCalledWith('m1');
   });
+
+  it('系統訊息置中渲染、無泡泡動作', () => {
+    render(
+      <Thread
+        title="G" isGroup memberNames={{}}
+        messages={[msg({ id: 's1', sender_id: 'u-actor', content: 'Alice 把 Bob 加入群組', kind: 'system' as const })]}
+        currentUserId="me" canLoadMore={false}
+        onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
+        onEdit={vi.fn()} onDelete={vi.fn()} onReact={vi.fn()}
+        attachmentUrl={(id) => 'http://api/attachments/' + id}
+        onUpload={vi.fn()}
+      />,
+    );
+    const el = screen.getByText('Alice 把 Bob 加入群組');
+    expect(el).toBeInTheDocument();
+    // 系統訊息不在泡泡內（無 rounded-2xl 外層）
+    expect(el.closest('.rounded-2xl')).toBeNull();
+    // 而是置中灰字 pill（rounded-full + bg-slate-100）
+    expect(el.className).toContain('rounded-full');
+    expect(el.className).toContain('bg-slate-100');
+    // 系統訊息不應出現「編輯 / 刪除」泡泡動作
+    expect(screen.queryByRole('button', { name: '編輯' })).toBeNull();
+  });
 });
