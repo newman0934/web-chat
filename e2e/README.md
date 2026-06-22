@@ -102,6 +102,10 @@ Tests use **fresh per-run accounts** with timestamped emails (e.g. `alice-reply-
 
 > 不自動化 15 分鐘編輯 / 5 分鐘還原時限（需操弄時間，由 backend pytest 以可調時窗覆蓋）。
 
+另有 `message-actions-ui.spec.ts`：真的開瀏覽器、登入、點泡泡上的「編輯/儲存、表情、刪除、還原」鈕，驗畫面對 `message_updated` 廣播的渲染（編輯後內容更新+「已編輯」、👍 chip 高亮、刪除佔位、還原回內容）。
+
+> **dev WS 重試**：chat 的 `send()` 在 socket 未 OPEN 時靜默丟棄、且 edit/delete/react 無失敗重送；dev + React.StrictMode 雙掛載會讓 socket 短暫不穩（production 無此問題）。故 UI spec 對每個動作「重做到 server 反映為止」（`retryAction`），貼近真實使用者「沒反應就再點」，避免假性 flaky。
+
 ### 語音/視訊訊號中繼（Call Signaling）
 
 `call-signaling-api.spec.ts` 純 WebSocket，只驗訊號路由與守門（媒體流 P2P 不經後端，不涉真 WebRTC）。
