@@ -133,3 +133,30 @@ class ConversationOut(BaseModel):
     last_message: MessageOut | None = None
     unread_count: int = 0
     roles: dict[uuid.UUID, str] = Field(default_factory=dict)
+
+
+# ---- notifications ----
+class NotificationActorOut(BaseModel):
+    id: uuid.UUID
+    display_name: str
+
+
+class NotificationOut(BaseModel):
+    id: uuid.UUID
+    type: str  # reply|reaction|forward
+    actor: NotificationActorOut
+    conversation_id: uuid.UUID
+    message_id: uuid.UUID
+    message_preview: str
+    emoji: str | None = None
+    read: bool
+    created_at: datetime
+
+
+class NotificationListOut(BaseModel):
+    items: list[NotificationOut] = Field(default_factory=list)
+    unread_count: int = 0
+
+
+class MarkReadRequest(BaseModel):
+    conversation_id: uuid.UUID

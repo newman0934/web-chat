@@ -274,3 +274,82 @@ async def test_ws_self_interaction_no_notification(
             ws_alice.receive_json()
 
     assert len(await _notifs_for(session_factory, alice_id)) == 0
+
+
+# ── Task 4: REST ─────────────────────────────────────────────────────────────
+
+
+async def _seed_reply_notif_for_bob(client, register_user, auth_headers):
+    """Bob 送訊息、Alice 回覆 → Bob 得一筆 reply 通知。回 (ta, tb, conv)。"""
+    ta, tb, conv = await _pair(client, register_user, auth_headers)
+    with TestClient(app) as tc:
+        with tc.websocket_connect(f"/ws?token={tb}") as ws_bob:
+            ws_bob.send_json({"type": "message", "conversation_id": conv,
+                              "content": "Bob 訊息", "temp_id": "m1"})
+            m_id = ws_bob.receive_json()["message"]["id"]
+        with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
+            ws_alice.send_json({"type": "message", "conversation_id": conv,
+                                "content": "回覆", "reply_to_message_id": m_id,
+                                "temp_id": "m2"})
+            ws_alice.receive_json()  # ack
+    return ta, tb, conv
+
+
+@pytest.mark.asyncio
+async def test_rest_list_and_unread_count(client, register_user, auth_headers):
+    ta, tb, conv = await _seed_reply_notif_for_bob(client, register_user, auth_headers)
+    resp = await client.get("/notifications", headers=auth_headers(tb))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["unread_count"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["type"] == "reply"
+    assert body["items"][0]["actor"]["display_name"] == "Alice"
+    assert body["items"][0]["read"] is False
+
+
+@pytest.mark.asyncio
+async def test_rest_mark_read_on_open(client, register_user, auth_headers):
+    ta, tb, conv = await _seed_reply_notif_for_bob(client, register_user, auth_headers)
+    r = await client.post("/notifications/read", json={"conversation_id": conv},
+                          headers=auth_headers(tb))
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "marked": 1}
+    body = (await client.get("/notifications", headers=auth_headers(tb))).json()
+    assert body["unread_count"] == 0
+    assert body["items"][0]["read"] is True
+
+
+@pytest.mark.asyncio
+async def test_rest_only_own_notifications(client, register_user, auth_headers):
+    ta, tb, conv = await _seed_reply_notif_for_bob(client, register_user, auth_headers)
+    # Alice(actor)自己沒有通知
+    body = (await client.get("/notifications", headers=auth_headers(ta))).json()
+    assert body["unread_count"] == 0
+    assert body["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_rest_unauthorized(client):
+    resp = await client.get("/notifications")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_rest_mark_read_missing_field(client, register_user, auth_headers):
+    tb = await register_user("nb@example.com", "Bob")
+    resp = await client.post("/notifications/read", json={}, headers=auth_headers(tb))
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_rest_mark_other_conversation_no_effect(client, register_user, auth_headers):
+    ta, tb, conv = await _seed_reply_notif_for_bob(client, register_user, auth_headers)
+    # Bob 對「隨機/非自己」對話標已讀 → marked 0、不影響既有未讀
+    r = await client.post("/notifications/read",
+                          json={"conversation_id": str(uuid.uuid4())},
+                          headers=auth_headers(tb))
+    assert r.status_code == 200
+    assert r.json()["marked"] == 0
+    body = (await client.get("/notifications", headers=auth_headers(tb))).json()
+    assert body["unread_count"] == 1
