@@ -243,6 +243,34 @@ export async function wsWaitForCollected(
   );
 }
 
+/**
+ * 只送一則 WS 訊息、不等待任何回應（送完短暫保留連線讓 server 完成轉送後關閉）。
+ * 用於「對端才會收到、寄件人自己 socket 沒有回應」的情境，如通話訊號 call_offer 轉送。
+ */
+export async function wsSendRaw(
+  page: Page,
+  token: string,
+  payload: object,
+  settleMs = 400
+): Promise<void> {
+  await page.evaluate(
+    ({ token, payload, settleMs, apiUrl }) =>
+      new Promise<void>((resolve, reject) => {
+        const wsUrl = `${apiUrl.replace("http", "ws")}/ws?token=${token}`;
+        const ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          ws.send(JSON.stringify(payload));
+          setTimeout(() => {
+            ws.close();
+            resolve();
+          }, settleMs);
+        };
+        ws.onerror = () => reject(new Error("wsSendRaw: WebSocket error"));
+      }),
+    { token, payload, settleMs, apiUrl: API }
+  );
+}
+
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
 /**

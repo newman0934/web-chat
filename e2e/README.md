@@ -82,6 +82,40 @@ Tests use **fresh per-run accounts** with timestamped emails (e.g. `alice-reply-
 
 > 這些規則 backend pytest（`test_group_*.py`）已完整覆蓋；Playwright 版本補 E2E 追溯，且 GM-01..06 用持續監聽的 WS 連線實測即時廣播。
 
+### 訊息動作（Message Actions）
+
+`message-actions-api.spec.ts` 純 WebSocket（無 UI）：編輯/刪除/還原/表情。
+
+| 場景 | 涵蓋內容 |
+|---|---|
+| MA-01 編輯本人訊息 | `message_updated`、content 更新、`edited_at` 非 null |
+| MA-02 編輯非本人 | 被拒 forbidden |
+| MA-03 編輯空內容 | 被拒 invalid_payload |
+| MA-04 刪除本人訊息 | `deleted=true`、content 清空 |
+| MA-05 刪除非本人 | 被拒 forbidden |
+| MA-06 還原剛刪訊息 | `deleted=false`、content 回來 |
+| MA-07 還原未刪訊息 | 被拒 forbidden |
+| MA-08 按表情 | reactions 含 `{emoji,count:1,user_ids:[me]}` |
+| MA-09 同表情再按 | toggle 移除 |
+| MA-10 非成員按表情 | 被拒 forbidden |
+| MA-11 編輯廣播 | 線上的另一成員實收 `message_updated` |
+
+> 不自動化 15 分鐘編輯 / 5 分鐘還原時限（需操弄時間，由 backend pytest 以可調時窗覆蓋）。
+
+### 語音/視訊訊號中繼（Call Signaling）
+
+`call-signaling-api.spec.ts` 純 WebSocket，只驗訊號路由與守門（媒體流 P2P 不經後端，不涉真 WebRTC）。
+
+| 場景 | 涵蓋內容 |
+|---|---|
+| VC-01 call_offer 轉送 | 對端收到、`from.id` 為撥號者、帶 sdp |
+| VC-02 call_answer 轉送 | 對端收到、帶 sdp |
+| VC-03 call_ice 轉送 | 對端收到、帶 candidate |
+| VC-04 reject / hangup 轉送 | 對端皆收到 |
+| VC-05 非好友撥號 | 被拒 forbidden |
+| VC-06 缺 to_user_id | 被拒 invalid_payload |
+| VC-07 對端離線 call_offer | 撥號者收到 `call_unavailable` |
+
 ## Environment Notes
 
 - **Module Federation constraint**: auth/chat remotes MUST be `build` + `preview`, NOT `vite dev`. The dev server doesn't produce `remoteEntry.js`, causing 404 in the host.
