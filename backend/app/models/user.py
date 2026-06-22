@@ -22,3 +22,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # 最後一條 WS 連線斷開的時間;在線(有連線)時不顯示時間。NULL = 從未上線。
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
