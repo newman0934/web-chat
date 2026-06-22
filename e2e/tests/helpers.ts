@@ -80,6 +80,34 @@ export async function apiGetContacts(
   return res.json();
 }
 
+/** 取得目前使用者（含 id），用來組 member_user_ids。 */
+export async function apiMe(
+  request: APIRequestContext,
+  token: string
+): Promise<{ id: string; email: string; display_name: string }> {
+  const res = await request.get(`${API}/users/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok()) throw new Error(`apiMe failed: ${res.status()}`);
+  return res.json();
+}
+
+/** 建群（name + 成員 user id 陣列，成員須為 creator 的好友）。回傳 ConversationOut。 */
+export async function apiCreateGroup(
+  request: APIRequestContext,
+  token: string,
+  name: string,
+  memberUserIds: string[]
+): Promise<any> {
+  const res = await request.post(`${API}/conversations/groups`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { name, member_user_ids: memberUserIds },
+  });
+  if (res.status() !== 201)
+    throw new Error(`apiCreateGroup failed: ${res.status()} ${await res.text()}`);
+  return res.json();
+}
+
 /** 取對話歷史，回傳訊息陣列（最新在後）。 */
 export async function apiGetMessages(
   request: APIRequestContext,
@@ -165,6 +193,54 @@ export async function wsSendMessage(
     "ack"
   );
   return ack.message;
+}
+
+/**
+ * 在一個 page 上開一條「持續監聽」的 WebSocket，把收到的訊息全部累積到
+ * `window.__wsMessages`。回傳後 socket 仍存活（掛在 window 上）。
+ *
+ * 用法：先在收件人的 page 上 wsOpenCollector → 再用另一條路徑（REST/別人 WS）
+ * 觸發群組操作 → 用 wsWaitForCollected 斷言這條連線收到了對應廣播。
+ * 每個 page 各自獨立的 __wsMessages，故多位收件人請各開一個 context/page。
+ */
+export async function wsOpenCollector(page: Page, token: string): Promise<void> {
+  await page.evaluate(
+    ({ token, apiUrl }) =>
+      new Promise<void>((resolve, reject) => {
+        const wsUrl = `${apiUrl.replace("http", "ws")}/ws?token=${token}`;
+        const ws = new WebSocket(wsUrl);
+        (window as any).__wsMessages = [];
+        ws.onmessage = (e) => {
+          try {
+            (window as any).__wsMessages.push(JSON.parse(e.data));
+          } catch (_) {}
+        };
+        ws.onopen = () => resolve();
+        ws.onerror = () => reject(new Error("wsOpenCollector: WebSocket error"));
+        (window as any).__ws = ws; // 持有參照避免被 GC
+      }),
+    { token, apiUrl: API }
+  );
+}
+
+/**
+ * 等待 collector 收到指定 type 的廣播，回傳所有符合的訊息。
+ * 逾時即拋錯（代表該廣播沒送到 → 測試失敗）。
+ */
+export async function wsWaitForCollected(
+  page: Page,
+  type: string,
+  timeoutMs = 8000
+): Promise<any[]> {
+  await page.waitForFunction(
+    (t) => ((window as any).__wsMessages || []).some((m: any) => m.type === t),
+    type,
+    { timeout: timeoutMs }
+  );
+  return page.evaluate(
+    (t) => ((window as any).__wsMessages || []).filter((m: any) => m.type === t),
+    type
+  );
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────

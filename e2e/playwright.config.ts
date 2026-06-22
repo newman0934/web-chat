@@ -55,12 +55,14 @@ export default defineConfig({
    */
   webServer: [
     {
-      // 1. Backend：先 migrate 再啟動 uvicorn（使用 ; 串連，PowerShell 相容）
+      // 1. Backend：先 migrate 再啟動 uvicorn。
+      // Playwright 在 Windows 透過 cmd.exe 執行 webServer command，故用 cmd 相容語法
+      // （`&&` 串連、引號包路徑），不可用 PowerShell 的 `$env:` / `&` 呼叫運算子。
+      // DATABASE_URL 改由下方 env 欄位注入（不在命令列內 inline 設定）。
       command: [
-        `$env:DATABASE_URL='sqlite+aiosqlite:///${E2E_DB.replace(/\\/g, "/")}';`,
-        `& '${BACKEND_VENV_PYTHON}' -m alembic upgrade head;`,
-        `& '${BACKEND_VENV_PYTHON}' -m uvicorn app.main:app --port 8000`,
-      ].join(" "),
+        `"${BACKEND_VENV_PYTHON}" -m alembic upgrade head`,
+        `"${BACKEND_VENV_PYTHON}" -m uvicorn app.main:app --port 8000`,
+      ].join(" && "),
       cwd: BACKEND_DIR,
       url: "http://localhost:8000/health",
       reuseExistingServer: true,

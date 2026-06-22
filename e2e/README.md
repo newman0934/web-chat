@@ -63,6 +63,25 @@ Tests use **fresh per-run accounts** with timestamped emails (e.g. `alice-reply-
 | RF-08 轉已刪訊息拒 | `reply-forward-api.spec.ts` RF-08 test + pytest |
 | RF-09 引用已刪佔位 | pytest (backend) + vitest (frontend) — no Playwright spec needed (UI-only rendering, covered by component tests) |
 
+### 群組管理（Group Management）
+
+`group-management-api.spec.ts` 走 REST + WebSocket（無 UI），取代原本多帳號手動點擊驗證。
+
+| 場景 | 涵蓋內容 |
+|---|---|
+| GM-01 admin 加好友入群 | 成員列更新 + 線上成員收到系統訊息與 `conversation_updated` |
+| GM-02 用 email 加非好友入群 | 放寬 friends-only，outsider 成功入群 |
+| GM-03 移除成員 | 成員列移除該員、被移除者收到 `conversation_removed` |
+| GM-04 改名 | name 更新、成員收到 `conversation_updated` + 系統訊息 |
+| GM-05 升級成員為 admin | roles 反映、被升級者取得管理權限（可改名） |
+| GM-06 成員退出群組 | 回 `{ok:true}`、自己收到 `conversation_removed`、群組少一人 |
+| GM-07 非 admin 管理操作 | 改名被拒 403 |
+| GM-08 唯一 admin 退出 | 被拒 400 |
+| GM-09 移除非成員 | 被拒 404 |
+| GM-10 加入已是成員者 | 被拒 400 |
+
+> 這些規則 backend pytest（`test_group_*.py`）已完整覆蓋；Playwright 版本補 E2E 追溯，且 GM-01..06 用持續監聽的 WS 連線實測即時廣播。
+
 ## Environment Notes
 
 - **Module Federation constraint**: auth/chat remotes MUST be `build` + `preview`, NOT `vite dev`. The dev server doesn't produce `remoteEntry.js`, causing 404 in the host.
