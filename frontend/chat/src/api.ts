@@ -1,7 +1,7 @@
 // chat remote 的 REST 客戶端：包裝 fetch，統一帶上 JWT 與錯誤處理。
 // 即時訊息走 WebSocket（見 useChatSocket.ts）；這裡只負責「非即時」的讀取與加好友。
 
-import type { Attachment, Contact, Conversation, GroupCreateRequest, Message, MessageVersion } from '../../contracts';
+import type { Attachment, Contact, Conversation, GroupCreateRequest, Message, MessageVersion, NotificationList } from '../../contracts';
 
 export class ApiClient {
   /** @param baseUrl REST API 根路徑 @param token JWT，附在 Authorization header */
@@ -109,6 +109,23 @@ export class ApiClient {
     return this.req<Conversation>(`/conversations/${conversationId}/members/${userId}/role`, {
       method: 'PATCH',
       body: JSON.stringify({ role }),
+    });
+  }
+
+  /** 取得站內通知列表(新→舊)與未讀數。before 為游標(取更早的)。 */
+  listNotifications(opts?: { before?: string; limit?: number }) {
+    const params = new URLSearchParams();
+    if (opts?.before) params.set('before', opts.before);
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    return this.req<NotificationList>(`/notifications${qs ? `?${qs}` : ''}`);
+  }
+
+  /** 開啟某對話時呼叫:把該對話下的通知標為已讀。 */
+  markNotificationsRead(conversationId: string) {
+    return this.req<{ ok: boolean; marked: number }>('/notifications/read', {
+      method: 'POST',
+      body: JSON.stringify({ conversation_id: conversationId }),
     });
   }
 

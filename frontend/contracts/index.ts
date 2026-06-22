@@ -109,6 +109,27 @@ export interface GroupCreateRequest {
   member_user_ids: string[];
 }
 
+// ---- 站內通知 ----
+
+export type NotificationType = 'reply' | 'reaction' | 'forward';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  actor: { id: string; display_name: string };
+  conversation_id: string;
+  message_id: string;
+  message_preview: string;
+  emoji: string | null;
+  read: boolean;
+  created_at: string;
+}
+
+export interface NotificationList {
+  items: Notification[];
+  unread_count: number;
+}
+
 // ---- WebSocket 訊息協定 ----
 
 export interface CallFrom {
@@ -145,4 +166,5 @@ export type ServerWsMessage =
   | { type: 'call_hangup'; from: CallFrom }
   | { type: 'call_unavailable'; to_user_id: string }
   | { type: 'conversation_updated'; conversation_id: string }
-  | { type: 'conversation_removed'; conversation_id: string };
+  | { type: 'conversation_removed'; conversation_id: string }
+  | { type: 'notification'; notification: Notification };
