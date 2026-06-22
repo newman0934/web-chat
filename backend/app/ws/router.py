@@ -33,6 +33,7 @@ from app.services.conversations import (
     read_count as read_count_fn,
 )
 from app.services.notifications import create_notification, serialize_notification
+from app.timeutils import to_utc_iso
 from app.ws.manager import manager
 
 router = APIRouter()
@@ -77,15 +78,15 @@ async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
         "conversation_id": str(msg.conversation_id),
         "sender_id": str(msg.sender_id),
         "content": "" if deleted else msg.content,
-        "created_at": msg.created_at.astimezone(timezone.utc).isoformat(),
+        "created_at": to_utc_iso(msg.created_at),
         "read_count": read_count,
         "attachment": (
             AttachmentOut.model_validate(attachment).model_dump(mode="json")
             if attachment else None
         ),
-        "edited_at": msg.edited_at.astimezone(timezone.utc).isoformat() if msg.edited_at else None,
+        "edited_at": to_utc_iso(msg.edited_at),
         "deleted": deleted,
-        "deleted_at": msg.deleted_at.astimezone(timezone.utc).isoformat() if msg.deleted_at else None,
+        "deleted_at": to_utc_iso(msg.deleted_at),
         "reactions": [g.model_dump(mode="json") for g in groups],
         "kind": msg.kind,
         "reply_to": reply_to,

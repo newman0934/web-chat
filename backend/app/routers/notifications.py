@@ -14,6 +14,7 @@ from app.db import get_db
 from app.models import User
 from app.schemas import MarkReadRequest, NotificationListOut
 from app.services import notifications as svc
+from app.timeutils import coerce_cursor
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -25,7 +26,7 @@ async def list_notifications(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    notifs = await svc.list_notifications(db, current_user.id, before=before, limit=limit)
+    notifs = await svc.list_notifications(db, current_user.id, before=coerce_cursor(db, before), limit=limit)
     items = [await svc.serialize_notification(db, n) for n in notifs]
     unread = await svc.unread_count(db, current_user.id)
     return {"items": items, "unread_count": unread}

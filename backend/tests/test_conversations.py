@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 import pytest
 
@@ -69,7 +70,8 @@ async def test_messages_pagination(
     assert "read_count" in msgs[0]
     assert "read_at" not in msgs[0]
 
-    oldest = msgs[0]["created_at"]
+    # created_at 為 tz-aware ISO（含 +00:00），URL 須編碼 +（前端走 URLSearchParams 會自動編碼）。
+    oldest = quote(msgs[0]["created_at"], safe="")
     prev = await client.get(
         f"/conversations/{conv_id}/messages?limit=2&before={oldest}",
         headers=auth_headers(alice),

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.db import get_db
 from app.models import Contact, Conversation, ConversationMember, Message, User
+from app.timeutils import coerce_cursor, to_utc_iso
 from app.schemas import AddMemberRequest, AttachmentOut, ConversationOut, ForwardedFromOut, GroupCreateRequest, GroupRenameRequest, MessageOut, ReplyPreviewOut, RoleUpdateRequest, UserOut
 from app.services.conversations import (
     build_forwarded_from,
@@ -130,6 +131,7 @@ async def list_messages(
     if conv is None:
         raise HTTPException(status_code=404, detail="查無此對話或無權限")
 
+    before = coerce_cursor(db, before)
     stmt = select(Message).where(Message.conversation_id == conversation_id)
     if before is not None:
         stmt = stmt.where(Message.created_at < before)
@@ -171,7 +173,7 @@ def _system_message_payload(msg: Message) -> dict:
         "conversation_id": str(msg.conversation_id),
         "sender_id": str(msg.sender_id),
         "content": msg.content,
-        "created_at": msg.created_at.astimezone(timezone.utc).isoformat(),
+        "created_at": to_utc_iso(msg.created_at),
         "read_count": 0,
         "attachment": None,
         "edited_at": None,
