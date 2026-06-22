@@ -2,12 +2,21 @@
 
 > 給接手的 session：先讀本檔 → 讀 [CLAUDE.md](CLAUDE.md) → 需要時讀設計文件
 > [docs/superpowers/specs/2026-06-19-chat-web-mvp-design.md](docs/superpowers/specs/2026-06-19-chat-web-mvp-design.md)。
-> 最後更新：2026-06-21
+> 最後更新：2026-06-22
 
 ## 一句話現況
 
-MVP + **群組聊天** + **圖片/檔案附件** + **訊息編輯/刪除/表情回應** + **語音/視訊通話（1對1，WebRTC P2P）** + **群組管理（成員/角色/改名）** + **訊息動作小增強（編輯歷史/時限、自由 emoji、還原刪除）**（皆最小可用）已實作完成、前後端測試全綠。
-全部疊在 `feat/group-chat` 整合分支上（各功能各自切支、review 後 `--no-ff` 併回）；`main` 仍保留在後（使用者選擇稍後處理）。皆採 subagent-driven 逐 task 完成並 review。
+MVP + **群組聊天** + **圖片/檔案附件** + **訊息編輯/刪除/表情回應** + **語音/視訊通話（1對1，WebRTC P2P）** + **群組管理（成員/角色/改名）** + **訊息動作小增強（編輯歷史/時限、自由 emoji、還原刪除）** + **回覆/轉發** + **站內通知** （皆最小可用）已實作完成、前後端測試全綠。
+全部疊在 `feat/group-chat` 整合分支上（各功能各自切支、review 後 `--no-ff` 併回）；`main` 仍保留在後（使用者選擇稍後處理）。
+**E2E**：`e2e/` 為 Playwright 套件（REST+WS 風格最省 token），全套涵蓋 reply/forward、群組管理、訊息動作（API+UI）、通話訊號、站內通知（API+UI）。**Docker/Postgres 路徑已驗**（`docker compose up` 全套容器健康，migration 0009 在 SQLite/Postgres 雙驗）。
+
+## 站內通知（2026-06-22 完成，feat/in-app-notifications 分支，走嚴格 SDD）
+
+- 功能：別人對「你的訊息」reply/reaction/forward 時產生持久化通知；chat remote 鈴鐺 🔔 + 未讀紅點 + 下拉通知中心；**開啟該訊息所在對話即標已讀**（已讀唯一來源）。一事件一通知、不通知自己、reaction toggle 移除不刪。見 [SDD 產物](docs/superpowers/specs/in-app-notifications/)。
+- 後端：新表 `Notification`（migration 0009）；`services/notifications.py`（建立/序列化/列表/未讀數/標已讀）；三處 WS handler 在「與觸發訊息同一 transaction」內建立通知、在線推 `{type:notification}`；REST `GET /notifications`（含 unread_count）、`POST /notifications/read {conversation_id}`。
+- 前端：contracts 型別 + WS 事件、`notifications.ts` 純函式、store（notifications/unreadCount + 三 action，未讀總數以伺服器為準）、`NotificationCenter`、ChatApp 接線（mount 載入、WS 即時、開對話標已讀）。
+- 測試：backend pytest 120 passed（test_notifications 14）；chat vitest 84 passed（notifications 4 + store +3 + NotificationCenter 5）；三 app tsc 乾淨；e2e notifications-api 9 + notifications-ui 1 綠。
+- 走嚴格 SDD：spec→bdd→plan→tasks→approval→逐 task TDD+commit→Playwright→review。
 
 ## 訊息動作小增強（2026-06-21 完成，feat/message-actions-enhancements 分支）
 

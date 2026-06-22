@@ -32,9 +32,17 @@ from app.services.conversations import (
     mark_read,
     read_count as read_count_fn,
 )
+from app.services.notifications import create_notification, serialize_notification
+from app.timeutils import to_utc_iso
 from app.ws.manager import manager
 
 router = APIRouter()
+
+
+async def _push_notification(recipient_id: uuid.UUID, payload: dict) -> None:
+    """通知建立後，收件人在線即推 server→client {type:"notification"}。"""
+    if manager.is_online(recipient_id):
+        await manager.send_to_user(recipient_id, {"type": "notification", "notification": payload})
 
 
 def _stringify_uuid_dict(d: dict | None, uuid_keys: list[str]) -> dict | None:
@@ -70,15 +78,15 @@ async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
         "conversation_id": str(msg.conversation_id),
         "sender_id": str(msg.sender_id),
         "content": "" if deleted else msg.content,
-        "created_at": msg.created_at.astimezone(timezone.utc).isoformat(),
+        "created_at": to_utc_iso(msg.created_at),
         "read_count": read_count,
         "attachment": (
             AttachmentOut.model_validate(attachment).model_dump(mode="json")
             if attachment else None
         ),
-        "edited_at": msg.edited_at.astimezone(timezone.utc).isoformat() if msg.edited_at else None,
+        "edited_at": to_utc_iso(msg.edited_at),
         "deleted": deleted,
-        "deleted_at": msg.deleted_at.astimezone(timezone.utc).isoformat() if msg.deleted_at else None,
+        "deleted_at": to_utc_iso(msg.deleted_at),
         "reactions": [g.model_dump(mode="json") for g in groups],
         "kind": msg.kind,
         "reply_to": reply_to,
@@ -186,6 +194,7 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
 
         # Validate that the quoted message exists, belongs to this conversation,
         # and has not been soft-deleted.
+        reply_msg: Message | None = None
         if reply_id is not None:
             reply_msg = await db.get(Message, reply_id)
             if (
@@ -229,6 +238,13 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
             await db.flush()  # 取得 message.id，尚未 commit
             if attachment is not None:
                 attachment.message_id = message.id
+            # 被回覆 → 通知原訊息 sender（與訊息同一 transaction;自己回自己不建）。
+            reply_notif = None
+            if reply_msg is not None:
+                reply_notif = await create_notification(
+                    db, user_id=reply_msg.sender_id, type="reply", actor_id=user.id,
+                    conversation_id=conv_id, message_id=reply_msg.id,
+                )
             await db.commit()
             await db.refresh(message)
             if attachment is not None:
@@ -242,11 +258,17 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
 
         payload = await _serialize_message(db, message)
         recipients = await get_other_member_ids(db, conv_id, user.id)
+        notif_push = None
+        if reply_notif is not None:
+            await db.refresh(reply_notif)
+            notif_push = (reply_msg.sender_id, await serialize_notification(db, reply_notif))
 
     await websocket.send_json({"type": "ack", "temp_id": temp_id, "message": payload})
     for rid in recipients:
         if manager.is_online(rid):
             await manager.send_to_user(rid, {"type": "message", "message": payload})
+    if notif_push is not None:
+        await _push_notification(*notif_push)
 
 
 async def _handle_read(websocket: WebSocket, user: User, data: dict) -> None:
@@ -471,16 +493,28 @@ async def _handle_forward(websocket: WebSocket, user: User, data: dict) -> None:
                 is_image=att.is_image,
             ))
 
+        # 7. 被轉發 → 通知原訊息 sender（conversation 為原訊息所在對話;自己轉自己不建）。
+        fwd_notif = await create_notification(
+            db, user_id=orig.sender_id, type="forward", actor_id=user.id,
+            conversation_id=orig.conversation_id, message_id=orig.id,
+        )
+
         await db.commit()
         await db.refresh(new_msg)
 
-        # 7. 序列化 & 廣播給目標對話所有在線成員（含發起人）
+        # 8. 序列化 & 廣播給目標對話所有在線成員（含發起人）
         payload = await _serialize_message(db, new_msg)
         member_ids = await get_member_ids(db, to_conv_id)
+        notif_push = None
+        if fwd_notif is not None:
+            await db.refresh(fwd_notif)
+            notif_push = (orig.sender_id, await serialize_notification(db, fwd_notif))
 
     for uid in member_ids:
         if manager.is_online(uid):
             await manager.send_to_user(uid, {"type": "message", "message": payload})
+    if notif_push is not None:
+        await _push_notification(*notif_push)
 
 
 async def _handle_react(websocket, user, data):
@@ -506,10 +540,22 @@ async def _handle_react(websocket, user, data):
             )
         )
         row = existing.scalar_one_or_none()
+        react_notif = None
         if row is None:
             db.add(Reaction(message_id=mid, user_id=user.id, emoji=emoji))
+            # 加表情 → 通知被按訊息的 sender（toggle 移除不通知、不刪既有通知）。
+            react_notif = await create_notification(
+                db, user_id=msg.sender_id, type="reaction", actor_id=user.id,
+                conversation_id=msg.conversation_id, message_id=msg.id, emoji=emoji,
+            )
         else:
             await db.execute(sa_delete(Reaction).where(Reaction.id == row.id))
         await db.commit()
         await db.refresh(msg)
+        notif_push = None
+        if react_notif is not None:
+            await db.refresh(react_notif)
+            notif_push = (msg.sender_id, await serialize_notification(db, react_notif))
         await _broadcast_updated(db, msg.conversation_id, user.id, msg)
+    if notif_push is not None:
+        await _push_notification(*notif_push)

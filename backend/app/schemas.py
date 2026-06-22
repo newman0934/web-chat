@@ -4,10 +4,25 @@
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
+
+
+def _utc_iso(dt: datetime | None) -> str | None:
+    """把 datetime 序列化成 tz-aware UTC ISO 字串。
+
+    SQLite（測試/開發）對 DateTime(timezone=True) 欄位回傳 naive datetime，
+    Pydantic 預設會序列化成「無時區」ISO，前端 new Date() 會誤判為本地時間。
+    這裡一律把 naive 視為 UTC（後端寫入的就是 UTC）並補上時區,確保前端正確。
+    Postgres 回 tz-aware 則原樣輸出。
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 
 # ---- auth / user ----
@@ -100,10 +115,18 @@ class MessageOut(BaseModel):
     reply_to: ReplyPreviewOut | None = None
     forwarded_from: ForwardedFromOut | None = None
 
+    @field_serializer("created_at", "edited_at", "deleted_at")
+    def _ser_dt(self, dt: datetime | None) -> str | None:
+        return _utc_iso(dt)
+
 
 class MessageVersionOut(BaseModel):
     content: str
     created_at: datetime
+
+    @field_serializer("created_at")
+    def _ser_dt(self, dt: datetime) -> str | None:
+        return _utc_iso(dt)
 
 
 class GroupCreateRequest(BaseModel):
@@ -133,3 +156,30 @@ class ConversationOut(BaseModel):
     last_message: MessageOut | None = None
     unread_count: int = 0
     roles: dict[uuid.UUID, str] = Field(default_factory=dict)
+
+
+# ---- notifications ----
+class NotificationActorOut(BaseModel):
+    id: uuid.UUID
+    display_name: str
+
+
+class NotificationOut(BaseModel):
+    id: uuid.UUID
+    type: str  # reply|reaction|forward
+    actor: NotificationActorOut
+    conversation_id: uuid.UUID
+    message_id: uuid.UUID
+    message_preview: str
+    emoji: str | None = None
+    read: bool
+    created_at: datetime
+
+
+class NotificationListOut(BaseModel):
+    items: list[NotificationOut] = Field(default_factory=list)
+    unread_count: int = 0
+
+
+class MarkReadRequest(BaseModel):
+    conversation_id: uuid.UUID

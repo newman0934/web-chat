@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 
-import type { Contact, Conversation, Message } from '../../contracts';
+import type { Contact, Conversation, Message, Notification, NotificationList } from '../../contracts';
 import {
   addIncoming,
   addOptimistic,
@@ -16,6 +16,7 @@ import {
   reconcileAck,
   type ChatMessage,
 } from './messageStore';
+import { applyMarkRead, upsertNotification } from './notifications';
 
 interface ChatState {
   conversations: Conversation[];
@@ -53,6 +54,17 @@ interface ChatState {
   /** 移除某對話（被踢/退出/群解散）；清掉其訊息與 hasMore，若為 active 則切回空畫面。 */
   removeConversation: (conversationId: string) => void;
 
+  // ---- 站內通知 ----
+  /** 通知清單（新→舊）與未讀總數（未讀數以伺服器為準，分頁不影響）。 */
+  notifications: Notification[];
+  unreadCount: number;
+  /** 由 REST 載入（含伺服器未讀總數）。 */
+  setNotifications: (list: NotificationList) => void;
+  /** WS 推來一筆新通知：upsert 到最前、未讀數 +1（同 id 重入不重覆計）。 */
+  addNotification: (n: Notification) => void;
+  /** 開啟對話後標已讀：本地把該對話通知設 read、未讀數扣掉伺服器回報的 marked 筆數。 */
+  markConversationRead: (conversationId: string, marked: number) => void;
+
   /** 重置成初始狀態（登入切換 / 卸載時呼叫，避免殘留上一位使用者資料）。 */
   reset: () => void;
 }
@@ -63,6 +75,8 @@ const initialState = {
   messages: {} as Record<string, ChatMessage[]>,
   hasMore: {} as Record<string, boolean>,
   contacts: [] as Contact[],
+  notifications: [] as Notification[],
+  unreadCount: 0,
 };
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -180,6 +194,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
         activeId: s.activeId === conversationId ? null : s.activeId,
       };
     }),
+
+  setNotifications: (list) =>
+    set({ notifications: list.items, unreadCount: list.unread_count }),
+
+  addNotification: (n) =>
+    set((s) => {
+      const exists = s.notifications.some((x) => x.id === n.id);
+      return {
+        notifications: upsertNotification(s.notifications, n),
+        unreadCount: exists ? s.unreadCount : s.unreadCount + 1,
+      };
+    }),
+
+  markConversationRead: (conversationId, marked) =>
+    set((s) => ({
+      notifications: applyMarkRead(s.notifications, conversationId),
+      unreadCount: Math.max(0, s.unreadCount - marked),
+    })),
 
   reset: () => set({ ...initialState }),
 }));

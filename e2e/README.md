@@ -120,6 +120,21 @@ Tests use **fresh per-run accounts** with timestamped emails (e.g. `alice-reply-
 | VC-06 缺 to_user_id | 被拒 invalid_payload |
 | VC-07 對端離線 call_offer | 撥號者收到 `call_unavailable` |
 
+### 站內通知(Notifications）
+
+`notifications-api.spec.ts`(REST+WS)與 `notifications-ui.spec.ts`(瀏覽器 UI)。
+
+| 場景 | 涵蓋內容 |
+|---|---|
+| NB-01 被回覆 | 收件人得 reply 通知 + 在線收到 WS `notification` |
+| NB-02 被按表情 | reaction 通知 + emoji |
+| NB-03 被轉發 | forward 通知,conversation 為原訊息所在對話 |
+| NB-05 未讀數/列表 | unread_count > 0、列表新→舊 |
+| NB-06 自己互動 | 不產生通知 |
+| NB-10/11/12 權限 | 只回自己的、401、標非自己對話 marked 0 |
+| NB-14 離線補齊 | 離線期間的通知上線後 `GET` 補得回 |
+| NUI 鈴鐺 UI | 紅點未讀 → 展開通知中心 → 點通知導向對話並清未讀 |
+
 ## Environment Notes
 
 - **Module Federation constraint**: auth/chat remotes MUST be `build` + `preview`, NOT `vite dev`. The dev server doesn't produce `remoteEntry.js`, causing 404 in the host.

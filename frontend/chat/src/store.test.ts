@@ -1,8 +1,23 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import type { Conversation, Message } from '../../contracts';
+import type { Conversation, Message, Notification } from '../../contracts';
 import { makeOptimistic } from './messageStore';
 import { useChatStore } from './store';
+
+function notif(id: string, over: Partial<Notification> = {}): Notification {
+  return {
+    id,
+    type: 'reply',
+    actor: { id: 'a1', display_name: 'Alice' },
+    conversation_id: 'c1',
+    message_id: 'm1',
+    message_preview: 'hi',
+    emoji: null,
+    read: false,
+    created_at: '2026-06-22T00:00:00Z',
+    ...over,
+  };
+}
 
 function realMsg(id: string, conversationId = 'c1', over: Partial<Message> = {}): Message {
   return {
@@ -129,5 +144,39 @@ describe('removeConversation', () => {
     st.setActiveId('c2');
     st.removeConversation('c1');
     expect(useChatStore.getState().activeId).toBe('c2');
+  });
+});
+
+describe('useChatStore 站內通知', () => {
+  it('setNotifications 帶入清單與伺服器未讀數', () => {
+    const st = useChatStore.getState();
+    st.setNotifications({ items: [notif('1'), notif('2', { read: true })], unread_count: 5 });
+    const s = useChatStore.getState();
+    expect(s.notifications).toHaveLength(2);
+    expect(s.unreadCount).toBe(5); // 以伺服器為準(可能大於本頁未讀)
+  });
+
+  it('addNotification 插到最前、未讀 +1;同 id 不重覆計', () => {
+    const st = useChatStore.getState();
+    st.setNotifications({ items: [], unread_count: 0 });
+    st.addNotification(notif('1'));
+    st.addNotification(notif('2'));
+    expect(useChatStore.getState().notifications.map((n) => n.id)).toEqual(['2', '1']);
+    expect(useChatStore.getState().unreadCount).toBe(2);
+    st.addNotification(notif('2', { read: true })); // 同 id 重入
+    expect(useChatStore.getState().unreadCount).toBe(2);
+  });
+
+  it('markConversationRead 標已讀並扣掉 marked 筆未讀', () => {
+    const st = useChatStore.getState();
+    st.setNotifications({
+      items: [notif('1', { conversation_id: 'c1' }), notif('2', { conversation_id: 'c2' })],
+      unread_count: 2,
+    });
+    st.markConversationRead('c1', 1);
+    const s = useChatStore.getState();
+    expect(s.notifications.find((n) => n.id === '1')!.read).toBe(true);
+    expect(s.notifications.find((n) => n.id === '2')!.read).toBe(false);
+    expect(s.unreadCount).toBe(1);
   });
 });
