@@ -85,10 +85,13 @@ async def list_conversations(
     )
     conversations = rows.scalars().all()
     out = [await _build_conversation_out(db, c, current_user) for c in conversations]
-    out.sort(
-        key=lambda c: c.last_message.created_at if c.last_message else datetime.min,
-        reverse=True,
-    )
+    # 排序 key 一律正規化成 tz-aware（UTC）：Postgres 的 TIMESTAMPTZ 回 aware、SQLite 回 naive，
+    # 兩者混排會 TypeError（can't compare offset-naive and offset-aware）。無訊息對話墊最小時間。
+    def _sort_key(c) -> datetime:
+        dt = c.last_message.created_at if c.last_message else datetime.min
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+    out.sort(key=_sort_key, reverse=True)
     return out
 
 
