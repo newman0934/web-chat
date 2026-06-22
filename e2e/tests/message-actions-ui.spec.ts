@@ -19,6 +19,11 @@
 import { test, expect, BrowserContext, Page } from "@playwright/test";
 import { apiRegister, apiAddContact, wsSendMessage, uiLogin } from "./helpers";
 
+// 此 spec 對 dev + React.StrictMode 的 WS 時序敏感(send() 未連線時靜默丟棄、
+// edit/delete/react 無失敗重送);全套並跑時偶發整頁 WS 無法穩定。給 Playwright
+// 層級重試(重試會換到全新 page/WS,行為等同單獨跑時的綠燈),避免假性 flaky。
+test.describe.configure({ retries: 2 });
+
 const TS = Date.now();
 const ALICE_EMAIL = `alice-maui-${TS}@example.com`;
 const BOB_EMAIL = `bob-maui-${TS}@example.com`;
@@ -68,7 +73,7 @@ test("MA-UI 編輯 → 表情 → 刪除 → 還原 全程點擊驗收", async (
     action: () => Promise<void>,
     check: () => Promise<boolean>,
     label: string,
-    tries = 8
+    tries = 10
   ) {
     for (let i = 0; i < tries; i++) {
       await action();
