@@ -1,6 +1,6 @@
 // 左側欄：目前使用者、加好友表單、對話清單（含未讀數）、連線狀態與登出。
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import type { Contact, Conversation } from '../../../contracts';
 
@@ -14,6 +14,8 @@ interface SidebarProps {
   onAddContact: (email: string) => Promise<string | null>;
   onCreateGroup: (name: string, memberIds: string[]) => Promise<string | null>;
   onLogout: () => void;
+  /** 通知中心（鈴鐺）插槽，由 ChatApp 注入；缺省則不顯示。 */
+  notificationSlot?: ReactNode;
 }
 
 /** 左側欄：使用者資訊、加好友、建群、對話清單與 WS 連線狀態。 */
@@ -27,6 +29,7 @@ export function Sidebar({
   onAddContact,
   onCreateGroup,
   onLogout,
+  notificationSlot,
 }: SidebarProps) {
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -90,12 +93,15 @@ export function Sidebar({
           <p className="text-sm text-slate-400">已登入</p>
           <p className="font-semibold text-slate-800">{currentUserName}</p>
         </div>
-        <button
-          onClick={onLogout}
-          className="text-sm text-slate-500 hover:text-red-600"
-        >
-          登出
-        </button>
+        <div className="flex items-center gap-1">
+          {notificationSlot}
+          <button
+            onClick={onLogout}
+            className="text-sm text-slate-500 hover:text-red-600"
+          >
+            登出
+          </button>
+        </div>
       </header>
 
       <form onSubmit={submit} className="space-y-2 border-b border-slate-200 p-4">

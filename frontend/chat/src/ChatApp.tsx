@@ -9,6 +9,7 @@ import { ApiClient, ApiError, UnauthorizedError } from './api';
 import { CallOverlay } from './components/CallOverlay';
 import { ForwardPicker } from './components/ForwardPicker';
 import { GroupInfoPanel } from './components/GroupInfoPanel';
+import { NotificationCenter } from './components/NotificationCenter';
 import { Sidebar } from './components/Sidebar';
 import { Thread } from './components/Thread';
 import { useCall } from './useCall';
@@ -37,6 +38,8 @@ export default function ChatApp({
   const messages = useChatStore((s) => s.messages);
   const hasMore = useChatStore((s) => s.hasMore);
   const contacts = useChatStore((s) => s.contacts);
+  const notifications = useChatStore((s) => s.notifications);
+  const unreadCount = useChatStore((s) => s.unreadCount);
 
   /** 從後端拉對話清單；401 時觸發登出。 */
   const loadConversations = useCallback(async () => {
@@ -54,6 +57,10 @@ export default function ChatApp({
     void api
       .listContacts()
       .then((c) => useChatStore.getState().setContacts(c))
+      .catch(() => {});
+    void api
+      .listNotifications()
+      .then((list) => useChatStore.getState().setNotifications(list))
       .catch(() => {});
   }, [loadConversations, api]);
 
@@ -101,6 +108,9 @@ export default function ChatApp({
           break;
         case 'message_updated':
           st.updateMessage(msg.message);
+          break;
+        case 'notification':
+          st.addNotification(msg.notification);
           break;
         case 'conversation_updated':
           void loadConversations();
@@ -156,8 +166,13 @@ export default function ChatApp({
       }
       socketRef.current?.send({ type: 'read', conversation_id: conversationId });
       useChatStore.getState().clearUnread(conversationId);
+      // 開啟對話即把指向它的通知標已讀（已讀的唯一來源）。
+      void api
+        .markNotificationsRead(conversationId)
+        .then((r) => useChatStore.getState().markConversationRead(conversationId, r.marked))
+        .catch(() => {});
     },
-    [refreshMessages],
+    [refreshMessages, api],
   );
 
   /** 向上分頁：以最早訊息的 created_at 為游標載入更早訊息。 */
@@ -340,6 +355,13 @@ export default function ChatApp({
         onAddContact={addContact}
         onCreateGroup={createGroup}
         onLogout={onLogout}
+        notificationSlot={
+          <NotificationCenter
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onOpen={(n) => selectConversation(n.conversation_id)}
+          />
+        }
       />
       {activeId && activeConv ? (
         <Thread
