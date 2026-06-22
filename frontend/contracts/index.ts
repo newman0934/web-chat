@@ -61,6 +61,19 @@ export interface MessageVersion {
 export const EDIT_WINDOW_MS = 15 * 60 * 1000;
 export const RESTORE_WINDOW_MS = 5 * 60 * 1000;
 
+export interface ReplyPreview {
+  id: string;
+  sender_id: string;
+  content: string;
+  deleted: boolean;
+  has_attachment: boolean;
+}
+
+export interface ForwardedFrom {
+  id: string;
+  display_name: string;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -74,6 +87,8 @@ export interface Message {
   deleted_at?: string | null;
   reactions: ReactionGroup[];
   kind?: 'user' | 'system';
+  reply_to?: ReplyPreview | null;
+  forwarded_from?: ForwardedFrom | null;
 }
 
 export type AttachmentOut = Attachment;
@@ -102,13 +117,14 @@ export interface CallFrom {
 }
 
 export type ClientWsMessage =
-  | { type: 'message'; conversation_id: string; content: string; temp_id: string; attachment_id?: string }
+  | { type: 'message'; conversation_id: string; content: string; temp_id: string; attachment_id?: string; reply_to_message_id?: string }
   | { type: 'read'; conversation_id: string }
   | { type: 'typing'; conversation_id: string }
   | { type: 'edit'; message_id: string; content: string }
   | { type: 'delete'; message_id: string }
   | { type: 'restore'; message_id: string }
   | { type: 'react'; message_id: string; emoji: string }
+  | { type: 'forward'; message_id: string; to_conversation_id: string }
   | { type: 'call_offer'; to_user_id: string; sdp: RTCSessionDescriptionInit }
   | { type: 'call_answer'; to_user_id: string; sdp: RTCSessionDescriptionInit }
   | { type: 'call_ice'; to_user_id: string; candidate: RTCIceCandidateInit }

@@ -2,7 +2,7 @@
 // 樂觀更新流程：送出時先以 temp_id 插入 'sending' 訊息 → 收到 ACK 換成正式訊息('sent')
 // → 失敗則標記 'failed' 供重試。
 
-import type { Attachment, Message } from '../../contracts';
+import type { Attachment, Message, ReplyPreview } from '../../contracts';
 
 export type MessageStatus = 'sending' | 'sent' | 'failed';
 
@@ -19,6 +19,7 @@ export function makeOptimistic(
   content: string,
   tempId: string,
   attachment: Attachment | null = null,
+  replyTo: ReplyPreview | null = null,
 ): ChatMessage {
   return {
     id: tempId,
@@ -34,6 +35,8 @@ export function makeOptimistic(
     reactions: [],
     temp_id: tempId,
     status: 'sending',
+    reply_to: replyTo,
+    forwarded_from: null,
   };
 }
 

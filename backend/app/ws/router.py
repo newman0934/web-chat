@@ -22,7 +22,11 @@ from app.models import Attachment, Message, MessageEdit, Reaction, User
 from app.schemas import AttachmentOut
 from app.services.conversations import (
     are_friends,
+    build_forwarded_from,
+    build_reply_preview,
+    get_attachment_for_message,
     get_conversation_for_member,
+    get_member_ids,
     get_other_member_ids,
     get_reaction_groups,
     mark_read,
@@ -33,6 +37,20 @@ from app.ws.manager import manager
 router = APIRouter()
 
 
+def _stringify_uuid_dict(d: dict | None, uuid_keys: list[str]) -> dict | None:
+    """把 dict 中指定的 uuid 欄位轉為 str，回傳新 dict（原 dict 不變）。
+
+    Helper for WS path: helpers return native uuid.UUID; WS needs str for JSON.
+    """
+    if d is None:
+        return None
+    result = dict(d)
+    for k in uuid_keys:
+        if k in result and result[k] is not None:
+            result[k] = str(result[k])
+    return result
+
+
 async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
     deleted = msg.deleted_at is not None
     attachment = None
@@ -40,6 +58,13 @@ async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
         att_res = await db.execute(select(Attachment).where(Attachment.message_id == msg.id))
         attachment = att_res.scalar_one_or_none()
     groups = [] if deleted else await get_reaction_groups(db, msg.id)
+
+    # reply_to / forwarded_from: helpers return uuid.UUID; stringify for WS JSON.
+    reply_to_raw = await build_reply_preview(db, msg)
+    forwarded_from_raw = await build_forwarded_from(db, msg)
+    reply_to = _stringify_uuid_dict(reply_to_raw, ["id", "sender_id"])
+    forwarded_from = _stringify_uuid_dict(forwarded_from_raw, ["id"])
+
     return {
         "id": str(msg.id),
         "conversation_id": str(msg.conversation_id),
@@ -56,6 +81,8 @@ async def _serialize_message(db, msg: Message, read_count: int = 0) -> dict:
         "deleted_at": msg.deleted_at.astimezone(timezone.utc).isoformat() if msg.deleted_at else None,
         "reactions": [g.model_dump(mode="json") for g in groups],
         "kind": msg.kind,
+        "reply_to": reply_to,
+        "forwarded_from": forwarded_from,
     }
 
 
@@ -110,6 +137,8 @@ async def _handle_client_message(websocket: WebSocket, user: User, data: dict) -
         await _handle_restore(websocket, user, data)
     elif msg_type == "react":
         await _handle_react(websocket, user, data)
+    elif msg_type == "forward":
+        await _handle_forward(websocket, user, data)
     elif msg_type in _CALL_TYPES:
         await _handle_call_signal(websocket, user, data)
     else:
@@ -121,6 +150,7 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
     content = (data.get("content") or "").strip()
     temp_id = data.get("temp_id")
     attachment_id_raw = data.get("attachment_id")
+    reply_to_message_id_raw = data.get("reply_to_message_id")
 
     if not conv_id_raw or (not content and not attachment_id_raw):
         await websocket.send_json(
@@ -135,6 +165,17 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
         )
         return
 
+    # Validate reply_to_message_id if provided (before opening the DB session).
+    reply_id: uuid.UUID | None = None
+    if reply_to_message_id_raw is not None:
+        try:
+            reply_id = uuid.UUID(str(reply_to_message_id_raw))
+        except ValueError:
+            await websocket.send_json(
+                {"type": "error", "reason": "invalid_payload", "temp_id": temp_id}
+            )
+            return
+
     async with db_module.SessionLocal() as db:
         conv = await get_conversation_for_member(db, conv_id, user.id)
         if conv is None:
@@ -142,6 +183,20 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
                 {"type": "error", "reason": "forbidden", "temp_id": temp_id}
             )
             return
+
+        # Validate that the quoted message exists, belongs to this conversation,
+        # and has not been soft-deleted.
+        if reply_id is not None:
+            reply_msg = await db.get(Message, reply_id)
+            if (
+                reply_msg is None
+                or reply_msg.conversation_id != conv_id
+                or reply_msg.deleted_at is not None
+            ):
+                await websocket.send_json(
+                    {"type": "error", "reason": "invalid_reply", "temp_id": temp_id}
+                )
+                return
 
         attachment = None
         if attachment_id_raw:
@@ -163,7 +218,12 @@ async def _handle_send(websocket: WebSocket, user: User, data: dict) -> None:
                 )
                 return
 
-        message = Message(conversation_id=conv_id, sender_id=user.id, content=content)
+        message = Message(
+            conversation_id=conv_id,
+            sender_id=user.id,
+            content=content,
+            reply_to_message_id=reply_id,
+        )
         db.add(message)
         try:
             await db.flush()  # 取得 message.id，尚未 commit
@@ -350,6 +410,77 @@ async def _handle_restore(websocket, user, data):
         await db.commit()
         await db.refresh(msg)
         await _broadcast_updated(db, msg.conversation_id, user.id, msg)
+
+
+async def _handle_forward(websocket: WebSocket, user: User, data: dict) -> None:
+    """轉發訊息到目標對話：複製內容/附件、記原作者、廣播給目標成員（含發起人）。
+
+    協定：{type:"forward", message_id, to_conversation_id}
+    無 temp_id / ack；廣播以一般 {type:"message", message} 傳達。
+    """
+    msg_id = _parse_uuid(data.get("message_id"))
+    to_conv_id = _parse_uuid(data.get("to_conversation_id"))
+    if msg_id is None or to_conv_id is None:
+        await websocket.send_json({"type": "error", "reason": "invalid_payload"})
+        return
+
+    async with db_module.SessionLocal() as db:
+        # 1. 查原訊息
+        orig = await db.get(Message, msg_id)
+        if orig is None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+
+        # 2. 確認發起人是原訊息對話的成員（看得到才可轉）
+        src_conv = await get_conversation_for_member(db, orig.conversation_id, user.id)
+        if src_conv is None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+
+        # 3. 不能轉發已軟刪訊息
+        if orig.deleted_at is not None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+
+        # 4. 確認發起人是目標對話的成員
+        tgt_conv = await get_conversation_for_member(db, to_conv_id, user.id)
+        if tgt_conv is None:
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+
+        # 5. 建新訊息（不繼承 reply_to）
+        new_msg = Message(
+            conversation_id=to_conv_id,
+            sender_id=user.id,
+            content=orig.content,
+            forwarded_from_user_id=orig.sender_id,
+        )
+        db.add(new_msg)
+        await db.flush()  # 取得 new_msg.id
+
+        # 6. 若原訊息有附件，複製一列（共用 stored_name，不動磁碟檔）
+        att = await get_attachment_for_message(db, orig.id)
+        if att is not None:
+            db.add(Attachment(
+                message_id=new_msg.id,
+                uploader_id=user.id,
+                stored_name=att.stored_name,
+                original_name=att.original_name,
+                content_type=att.content_type,
+                size=att.size,
+                is_image=att.is_image,
+            ))
+
+        await db.commit()
+        await db.refresh(new_msg)
+
+        # 7. 序列化 & 廣播給目標對話所有在線成員（含發起人）
+        payload = await _serialize_message(db, new_msg)
+        member_ids = await get_member_ids(db, to_conv_id)
+
+    for uid in member_ids:
+        if manager.is_online(uid):
+            await manager.send_to_user(uid, {"type": "message", "message": payload})
 
 
 async def _handle_react(websocket, user, data):

@@ -1,0 +1,11 @@
+# 避免把本機開發產物塞進 build context / image
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.db
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.env

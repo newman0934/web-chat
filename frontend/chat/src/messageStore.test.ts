@@ -105,4 +105,24 @@ describe('messageStore 樂觀更新', () => {
     expect(next).toHaveLength(1);
     expect(next[0].id).toBe('m1');
   });
+
+  it('makeOptimistic 帶 replyTo 時設 reply_to 並清 forwarded_from', () => {
+    const replyPreview = {
+      id: 'orig-1',
+      sender_id: 'user-2',
+      content: 'original content',
+      deleted: false,
+      has_attachment: false,
+    };
+    const m = makeOptimistic('conv-1', 'me', 'reply text', 'tmp-2', null, replyPreview);
+    expect(m.reply_to).toEqual(replyPreview);
+    expect(m.forwarded_from).toBeNull();
+    expect(m.status).toBe('sending');
+  });
+
+  it('makeOptimistic 不帶 replyTo 時 reply_to 為 null', () => {
+    const m = makeOptimistic('conv-1', 'me', 'hi', 'tmp-3');
+    expect(m.reply_to).toBeNull();
+    expect(m.forwarded_from).toBeNull();
+  });
 });
