@@ -15,17 +15,23 @@ class ConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[uuid.UUID, set[WebSocket]] = defaultdict(set)
 
-    async def connect(self, user_id: uuid.UUID, websocket: WebSocket) -> None:
+    async def connect(self, user_id: uuid.UUID, websocket: WebSocket) -> bool:
+        """接受連線並登記。回傳 is_first:該 user 由 0→1 條(剛上線)。"""
         await websocket.accept()
+        is_first = len(self._connections.get(user_id, ())) == 0
         self._connections[user_id].add(websocket)
+        return is_first
 
-    def disconnect(self, user_id: uuid.UUID, websocket: WebSocket) -> None:
+    def disconnect(self, user_id: uuid.UUID, websocket: WebSocket) -> bool:
+        """移除連線。回傳 is_last:該 user 由 1→0 條(剛離線)。"""
         conns = self._connections.get(user_id)
-        if not conns:
-            return
+        if not conns or websocket not in conns:
+            return False
         conns.discard(websocket)
         if not conns:
             self._connections.pop(user_id, None)
+            return True
+        return False
 
     def is_online(self, user_id: uuid.UUID) -> bool:
         return bool(self._connections.get(user_id))
