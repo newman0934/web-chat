@@ -25,6 +25,12 @@ function renderSidebar(over = {}) {
   );
 }
 
+const directConv: Conversation = {
+  id: 'd1', type: 'direct', name: null,
+  other_user: { id: 'u2', email: 'b@x.com', display_name: 'Bob' },
+  members: [], last_message: null, unread_count: 0, roles: {},
+};
+
 describe('Sidebar 群組', () => {
   it('群組顯示名稱與成員數', () => {
     renderSidebar();
@@ -36,5 +42,33 @@ describe('Sidebar 群組', () => {
     renderSidebar();
     fireEvent.click(screen.getByRole('button', { name: /新群組/ }));
     expect(screen.getByLabelText('群組名稱')).toBeInTheDocument();
+  });
+
+  it('群組對話列不顯示 presence 點', () => {
+    renderSidebar();
+    expect(screen.queryByTestId('presence-dot')).toBeNull();
+  });
+});
+
+describe('Sidebar presence 點(1對1)', () => {
+  it('好友在線顯示綠點(data-online=true)', () => {
+    renderSidebar({
+      conversations: [directConv],
+      presence: { u2: { online: true, last_seen_at: null } },
+    });
+    expect(screen.getByTestId('presence-dot').getAttribute('data-online')).toBe('true');
+  });
+
+  it('好友離線顯示灰點(data-online=false)', () => {
+    renderSidebar({
+      conversations: [directConv],
+      presence: { u2: { online: false, last_seen_at: '2026-06-23T00:00:00Z' } },
+    });
+    expect(screen.getByTestId('presence-dot').getAttribute('data-online')).toBe('false');
+  });
+
+  it('presence 缺漏時預設灰點', () => {
+    renderSidebar({ conversations: [directConv] });
+    expect(screen.getByTestId('presence-dot').getAttribute('data-online')).toBe('false');
   });
 });

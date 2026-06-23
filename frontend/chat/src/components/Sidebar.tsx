@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 
 import type { Contact, Conversation } from '../../../contracts';
+import type { PresenceMap } from '../presence';
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -16,6 +17,22 @@ interface SidebarProps {
   onLogout: () => void;
   /** 通知中心（鈴鐺）插槽，由 ChatApp 注入；缺省則不顯示。 */
   notificationSlot?: ReactNode;
+  /** 好友線上狀態（user_id → state）；1對1 對話列據此顯示綠/灰點。 */
+  presence?: PresenceMap;
+}
+
+/** 線上狀態小圓點：綠=在線、灰=離線。 */
+function PresenceDot({ online }: { online: boolean }) {
+  return (
+    <span
+      data-testid="presence-dot"
+      data-online={online}
+      title={online ? '在線' : '離線'}
+      className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${
+        online ? 'bg-green-500' : 'bg-slate-300'
+      }`}
+    />
+  );
 }
 
 /** 左側欄：使用者資訊、加好友、建群、對話清單與 WS 連線狀態。 */
@@ -30,6 +47,7 @@ export function Sidebar({
   onCreateGroup,
   onLogout,
   notificationSlot,
+  presence = {},
 }: SidebarProps) {
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -203,8 +221,13 @@ export function Sidebar({
                   }`}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-slate-800">
-                      {c.type === 'group' ? c.name : c.other_user?.display_name}
+                    <span className="flex items-center gap-1.5 truncate font-medium text-slate-800">
+                      {c.type === 'direct' && c.other_user && (
+                        <PresenceDot online={presence[c.other_user.id]?.online ?? false} />
+                      )}
+                      <span className="truncate">
+                        {c.type === 'group' ? c.name : c.other_user?.display_name}
+                      </span>
                       {c.type === 'group' && (
                         <span className="ml-1 text-xs text-slate-400">· {c.members.length} 人</span>
                       )}
