@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChatAppProps, ReplyPreview, ServerWsMessage } from '../../contracts';
+import type { ChatAppProps, ServerWsMessage } from '../../contracts';
 import { ApiClient, ApiError, UnauthorizedError } from './api';
 import { CallOverlay } from './components/CallOverlay';
 import { ForwardPicker } from './components/ForwardPicker';
@@ -13,10 +13,11 @@ import { NotificationCenter } from './components/NotificationCenter';
 import { Sidebar } from './components/Sidebar';
 import { Thread } from './components/Thread';
 import { useCall } from './useCall';
-import { makeOptimistic } from './messageStore';
 import { formatLastSeen } from './presence';
 import { useChatStore } from './store';
 import { useChatSocket } from './useChatSocket';
+import { useMessageActions } from './useMessageActions';
+import { dispatchServerMessage } from './wsDispatch';
 
 const PAGE_SIZE = 30;
 
@@ -87,58 +88,15 @@ export default function ChatApp({
   );
 
   // ---- WebSocket ----
-  /** 分派 WebSocket 推播：ACK 對齊、新訊息、已讀、送訊失敗。 */
+  /** 分派 WebSocket 推播給 wsDispatch（store 變更集中於該模組，副作用由此注入）。 */
   const handleServerMessage = useCallback(
-    (msg: ServerWsMessage) => {
-      const st = useChatStore.getState();
-      switch (msg.type) {
-        case 'ack':
-          st.ackMessage(msg.temp_id, msg.message);
-          break;
-        case 'message':
-          st.receiveMessage(msg.message);
-          // 若正開著該對話，立刻回報已讀。
-          if (st.activeId === msg.message.conversation_id) {
-            socketRef.current?.send({
-              type: 'read',
-              conversation_id: msg.message.conversation_id,
-            });
-          }
-          void loadConversations();
-          break;
-        case 'read':
-          st.markRead(msg.conversation_id, msg.message_ids);
-          break;
-        case 'error':
-          if (msg.temp_id) st.failMessage(msg.temp_id);
-          break;
-        case 'message_updated':
-          st.updateMessage(msg.message);
-          break;
-        case 'notification':
-          st.addNotification(msg.notification);
-          break;
-        case 'presence':
-          st.applyPresenceEvent(msg);
-          break;
-        case 'conversation_updated':
-          void loadConversations();
-          break;
-        case 'conversation_removed':
-          st.removeConversation(msg.conversation_id);
-          break;
-        case 'call_offer':
-        case 'call_answer':
-        case 'call_ice':
-        case 'call_reject':
-        case 'call_hangup':
-        case 'call_unavailable':
-          callRef.current.handleSignal(msg);
-          break;
-        default:
-          break;
-      }
-    },
+    (msg: ServerWsMessage) =>
+      dispatchServerMessage(msg, {
+        reloadConversations: () => { void loadConversations(); },
+        sendRead: (conversationId) =>
+          { socketRef.current?.send({ type: 'read', conversation_id: conversationId }); },
+        handleCallSignal: (m) => callRef.current.handleSignal(m),
+      }),
     [loadConversations],
   );
 
@@ -164,6 +122,18 @@ export default function ChatApp({
   const call = useCall(wsSend);
   const callRef = useRef(call);
   callRef.current = call;
+
+  // 訊息動作（送出/重試/編輯/刪除/表情/還原/轉發/編輯歷史）集中在 hook，以 wsSend 發訊。
+  const {
+    sendMessage,
+    retry,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
+    restoreMessage,
+    forwardMessage,
+    loadEditHistory,
+  } = useMessageActions(wsSend, api, currentUser.id);
 
   /** 切換對話：必要時拉歷史、送 read 事件、清本地未讀數。 */
   const selectConversation = useCallback(
@@ -221,63 +191,6 @@ export default function ChatApp({
     [api, onLogout],
   );
 
-  // ---- 送訊息（樂觀更新） ----
-  /** 樂觀送出訊息：先插入 UI，再經 WS 送出；連線不可用則標 failed。 */
-  const sendMessage = useCallback(
-    (content: string, attachmentId?: string, replyToMessageId?: string, replyPreview?: ReplyPreview | null) => {
-      const st = useChatStore.getState();
-      const active = st.activeId;
-      if (!active) return;
-      const tempId = crypto.randomUUID();
-      // 樂觀訊息先不帶附件預覽，待 server ack 帶回正式 attachment 再顯示。
-      st.appendOptimistic(active, makeOptimistic(active, currentUser.id, content, tempId, null, replyPreview ?? null));
-      const ok = socketRef.current?.send({
-        type: 'message',
-        conversation_id: active,
-        content,
-        temp_id: tempId,
-        attachment_id: attachmentId,
-        ...(replyToMessageId !== undefined ? { reply_to_message_id: replyToMessageId } : {}),
-      });
-      if (!ok) useChatStore.getState().failMessage(tempId);
-    },
-    [currentUser.id],
-  );
-
-  /** 重送 failed 訊息：沿用原 temp_id 以便 ACK 對齊。 */
-  const retry = useCallback((tempId: string) => {
-    const st = useChatStore.getState();
-    const active = st.activeId;
-    if (!active) return;
-    const failed = (st.messages[active] ?? []).find((m) => m.temp_id === tempId);
-    if (!failed) return;
-    st.resendMessage(active, tempId);
-    const ok = socketRef.current?.send({
-      type: 'message',
-      conversation_id: active,
-      content: failed.content,
-      temp_id: tempId,
-    });
-    if (!ok) useChatStore.getState().failMessage(tempId);
-  }, []);
-
-  const editMessage = useCallback((id: string, content: string) => {
-    socketRef.current?.send({ type: 'edit', message_id: id, content });
-  }, []);
-  const deleteMessage = useCallback((id: string) => {
-    socketRef.current?.send({ type: 'delete', message_id: id });
-  }, []);
-  const toggleReaction = useCallback((id: string, emoji: string) => {
-    socketRef.current?.send({ type: 'react', message_id: id, emoji });
-  }, []);
-  const restoreMessage = useCallback((id: string) => {
-    socketRef.current?.send({ type: 'restore', message_id: id });
-  }, []);
-  const loadEditHistory = useCallback(
-    (id: string) => api.getMessageEdits(id),
-    [api],
-  );
-
   /** 加好友並刷新對話清單；回傳 null 表示成功，否則為錯誤訊息字串。 */
   const addContact = useCallback(
     async (email: string): Promise<string | null> => {
@@ -319,10 +232,6 @@ export default function ChatApp({
 
   const [showInfo, setShowInfo] = useState(false);
   const [forwarding, setForwarding] = useState<string | null>(null);
-
-  const forwardMessage = useCallback((messageId: string, toConversationId: string) => {
-    socketRef.current?.send({ type: 'forward', message_id: messageId, to_conversation_id: toConversationId });
-  }, []);
 
   const runGroupOp = useCallback(
     async (op: () => Promise<unknown>) => {
