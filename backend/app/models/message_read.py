@@ -19,8 +19,9 @@ class MessageRead(Base):
     message_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("messages.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    # user_id 建索引:unread_count / mark_read 以 user_id 過濾子查詢,訊息量大時避免全表掃描。
     user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     read_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
