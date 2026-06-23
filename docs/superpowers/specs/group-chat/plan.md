@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI、SQLAlchemy 2.0（async）、Alembic、React 18 + Vite + Module Federation、pytest、Vitest。
 
-**設計來源：** [docs/superpowers/specs/2026-06-19-group-chat-design.md](../specs/2026-06-19-group-chat-design.md)
+**設計來源：** [spec.md](spec.md)
 
 ## Global Constraints
 

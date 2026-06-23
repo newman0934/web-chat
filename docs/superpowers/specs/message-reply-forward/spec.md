@@ -3,7 +3,7 @@
 - 日期：2026-06-21
 - 狀態：設計定案，待核准
 - 分支基底：`feat/group-chat`
-- 來源：[訊息動作設計](../2026-06-20-message-actions-design.md) 標為「明確不做」的「對訊息回覆（reply）、轉發」。本功能起依 [CLAUDE.md](../../../../CLAUDE.md) 的 SDD workflow 產出 spec/bdd/plan/tasks/acceptance + Playwright。
+- 來源：[訊息動作設計](../message-actions/spec.md) 標為「明確不做」的「對訊息回覆（reply）、轉發」。本功能起依 [CLAUDE.md](../../../../CLAUDE.md) 的 SDD workflow 產出 spec/bdd/plan/tasks/acceptance + Playwright。
 
 ## Overview
 

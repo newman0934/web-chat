@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI、SQLAlchemy 2.0 async、Alembic、React 18 + Vite + Module Federation + zustand、pytest、Vitest。
 
-**設計來源：** [docs/superpowers/specs/2026-06-20-message-actions-design.md](../specs/2026-06-20-message-actions-design.md)
+**設計來源：** [spec.md](spec.md)
 
 ## Global Constraints
 

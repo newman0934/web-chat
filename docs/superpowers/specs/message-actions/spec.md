@@ -3,7 +3,7 @@
 - 日期：2026-06-20
 - 狀態：設計定案，待 review
 - 範圍：在現有聊天（1對1 + 群組 + 附件）上新增訊息編輯、軟刪除、表情回應
-- 前置：原列於 [MVP 設計文件](2026-06-19-chat-web-mvp-design.md) 的「明確不做」，經使用者要求納入。建立在 `feat/group-chat` 分支之上。
+- 前置：原列於 [MVP 設計文件](../2026-06-19-chat-web-mvp-design.md) 的「明確不做」，經使用者要求納入。建立在 `feat/group-chat` 分支之上。
 
 ## 1. 目標與範圍
 
@@ -18,7 +18,7 @@
 
 ### 明確不做（之後擴充）
 
-- ✅ 編輯歷史 / 版本紀錄、編輯時間限制 —— 已於 [小增強](2026-06-21-message-actions-enhancements-design.md) 補上（MessageEdit 表 + 15 分鐘時限）
+- ✅ 編輯歷史 / 版本紀錄、編輯時間限制 —— 已於 [小增強](../message-actions-enhancements/spec.md) 補上（MessageEdit 表 + 15 分鐘時限）
 - ✅ 自由 emoji 選擇器（原只用固定 6 個）—— 已補上（快速 6 + emoji-mart 完整選擇器；後端改單一 emoji 形狀驗證）
 - ✅ 還原已刪除訊息 —— 已補上（寄件人 5 分鐘內，刪除改為非破壞性 + 輸出遮蔽）
 - ❌ 對訊息回覆（reply / thread）、轉發 —— 另一子專案

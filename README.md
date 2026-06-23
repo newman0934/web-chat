@@ -2,9 +2,18 @@
 
 Web 版即時通訊軟體：1對1 + **群組聊天**。前端採微前端（Module Federation），後端 FastAPI。
 
-設計文件：
-- [MVP（1對1）](docs/superpowers/specs/2026-06-19-chat-web-mvp-design.md)
-- [群組聊天](docs/superpowers/specs/2026-06-19-group-chat-design.md)
+設計文件（PRD）：[MVP（1對1）](docs/superpowers/specs/2026-06-19-chat-web-mvp-design.md)
+
+各功能規格依 SDD 收於 `docs/superpowers/specs/<feature>/`（`spec.md` / `plan.md`，較新功能另含 `bdd.feature` / `tasks.md` / `acceptance.md`）：
+- [群組聊天](docs/superpowers/specs/group-chat/spec.md)
+- [圖片與檔案附件](docs/superpowers/specs/file-attachments/spec.md)
+- [訊息編輯/刪除/表情](docs/superpowers/specs/message-actions/spec.md)
+- [群組管理](docs/superpowers/specs/group-management/spec.md)
+- [訊息動作增強](docs/superpowers/specs/message-actions-enhancements/spec.md)
+- [語音/視訊通話](docs/superpowers/specs/voice-video/spec.md)
+- [回覆/轉發](docs/superpowers/specs/message-reply-forward/spec.md)
+- [站內通知](docs/superpowers/specs/in-app-notifications/spec.md)
+- [線上狀態](docs/superpowers/specs/presence/spec.md)
 
 ## 群組聊天
 
