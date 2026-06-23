@@ -370,14 +370,15 @@ describe('Thread 小增強', () => {
     expect(screen.queryByRole('button', { name: '還原' })).toBeNull();
   });
 
-  it('emoji-mart 選擇器選 emoji 呼叫 onReact', () => {
+  it('emoji-mart 選擇器選 emoji 呼叫 onReact', async () => {
     const onReact = vi.fn();
     render(
       <Thread {...base} onReact={onReact}
         messages={[msg({ id: 'm1', sender_id: 'me', content: 'hi', created_at: nowIso(60_000) })]} />,
     );
     fireEvent.click(screen.getByRole('button', { name: '更多表情' }));
-    fireEvent.click(screen.getByText('mock-picker-pick'));
+    // 完整選擇器以 React.lazy 動態載入,需等其載入完成才出現。
+    fireEvent.click(await screen.findByText('mock-picker-pick'));
     expect(onReact).toHaveBeenCalledWith('m1', '🎉');
   });
 });
