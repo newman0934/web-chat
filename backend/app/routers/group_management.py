@@ -20,9 +20,9 @@ from app.services.conversations import (
     get_member,
     get_member_ids,
     is_group_admin,
-    serialize_conversation_out,
     would_leave_groupless_of_admin,
 )
+from app.services.conversation_serializers import serialize_conversation_out
 from app.timeutils import to_utc_iso
 from app.ws.manager import manager
 

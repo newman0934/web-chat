@@ -12,9 +12,8 @@ from app.db import get_db
 from app.models import Contact, Conversation, ConversationMember, Message, User
 from app.timeutils import coerce_cursor
 from app.schemas import ConversationOut, GroupCreateRequest, MessageOut
-from app.services.conversations import (
-    create_group_conversation,
-    get_conversation_for_member,
+from app.services.conversations import create_group_conversation, get_conversation_for_member
+from app.services.conversation_serializers import (
     serialize_conversation_out,
     serialize_conversations_out,
     serialize_message_out,

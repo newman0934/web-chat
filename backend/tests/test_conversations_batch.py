@@ -13,6 +13,8 @@ from app.models import Message, MessageRead, User
 from app.services.conversations import (
     create_group_conversation,
     get_or_create_direct_conversation,
+)
+from app.services.conversation_serializers import (
     serialize_conversation_out,
     serialize_conversations_out,
 )

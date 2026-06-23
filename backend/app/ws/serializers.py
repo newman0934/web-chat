@@ -6,7 +6,7 @@ model_dump(mode="json")（uuid→str、datetime→tz-aware UTC ISO）。如此 W
 """
 
 from app.models import Message
-from app.services.conversations import serialize_message_out
+from app.services.conversation_serializers import serialize_message_out
 
 
 async def serialize_message(db, msg: Message, read_count: int = 0) -> dict:
