@@ -16,7 +16,7 @@ from app.services.conversations import create_group_conversation, get_conversati
 from app.services.conversation_serializers import (
     serialize_conversation_out,
     serialize_conversations_out,
-    serialize_message_out,
+    serialize_messages_out,
 )
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -87,4 +87,4 @@ async def list_messages(
     result = await db.execute(stmt)
     messages = list(result.scalars().all())
     messages.reverse()
-    return [await serialize_message_out(db, m) for m in messages]
+    return await serialize_messages_out(db, messages)

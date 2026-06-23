@@ -10,12 +10,21 @@ import uuid
 from sqlalchemy import func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation, ConversationMember, Message, MessageRead, User
+from app.models import (
+    Attachment,
+    Conversation,
+    ConversationMember,
+    Message,
+    MessageRead,
+    Reaction,
+    User,
+)
 from app.schemas import (
     AttachmentOut,
     ConversationOut,
     ForwardedFromOut,
     MessageOut,
+    ReactionGroupOut,
     ReplyPreviewOut,
     UserOut,
 )
@@ -60,6 +69,106 @@ async def serialize_message_out(
         reply_to=ReplyPreviewOut(**reply_to_d) if reply_to_d else None,
         forwarded_from=ForwardedFromOut(**forwarded_from_d) if forwarded_from_d else None,
     )
+
+
+async def serialize_messages_out(db: AsyncSession, messages: list[Message]):
+    """批次版:把一頁 Message 一次組成 MessageOut[]，查詢數固定(不隨訊息數成長)。
+
+    取代「逐則各跑 ~3-6 個查詢」的 N+1(附件 / 表情 / 已讀數 / 回覆預覽 / 轉發來源),
+    各只一次。輸出與逐則 serialize_message_out 等價(見 test_messages_batch;表情分組順序
+    與逐則版一樣不保證,比較時正規化)。
+    """
+    if not messages:
+        return []
+    ids = [m.id for m in messages]
+    live_ids = [m.id for m in messages if m.deleted_at is None]
+    reply_ids = list({m.reply_to_message_id for m in messages if m.reply_to_message_id is not None})
+    fwd_ids = list({m.forwarded_from_user_id for m in messages if m.forwarded_from_user_id is not None})
+
+    # 附件:本頁(非刪)訊息的(供 attachment 欄位)+ 被回覆訊息的(供 reply 預覽 has_attachment)。
+    att_msg_ids = set(live_ids) | set(reply_ids)
+    att_by_msg: dict = {}
+    if att_msg_ids:
+        arows = (await db.execute(
+            select(Attachment).where(Attachment.message_id.in_(att_msg_ids))
+        )).scalars().all()
+        att_by_msg = {a.message_id: a for a in arows}
+
+    # 表情:本頁非刪訊息,依 message_id 再依 emoji 分組(保留 first-seen 順序,與逐則一致)。
+    reactions_by_msg: dict = {}
+    if live_ids:
+        rrows = (await db.execute(
+            select(Reaction.message_id, Reaction.emoji, Reaction.user_id)
+            .where(Reaction.message_id.in_(live_ids))
+        )).all()
+        tmp: dict = {}
+        for mid, emoji, uid in rrows:
+            tmp.setdefault(mid, {}).setdefault(emoji, []).append(uid)
+        reactions_by_msg = {
+            mid: [ReactionGroupOut(emoji=e, count=len(us), user_ids=us) for e, us in by_emoji.items()]
+            for mid, by_emoji in tmp.items()
+        }
+
+    # 已讀數:本頁全部(一次 group by)。
+    rc_by_msg: dict = {}
+    if ids:
+        rc_rows = (await db.execute(
+            select(MessageRead.message_id, func.count())
+            .where(MessageRead.message_id.in_(ids))
+            .group_by(MessageRead.message_id)
+        )).all()
+        rc_by_msg = {mid: cnt for mid, cnt in rc_rows}
+
+    # 被回覆訊息 / 轉發來源使用者。
+    reply_msgs: dict = {}
+    if reply_ids:
+        reply_msgs = {
+            r.id: r for r in
+            (await db.execute(select(Message).where(Message.id.in_(reply_ids)))).scalars().all()
+        }
+    fwd_users: dict = {}
+    if fwd_ids:
+        fwd_users = {
+            u.id: u for u in
+            (await db.execute(select(User).where(User.id.in_(fwd_ids)))).scalars().all()
+        }
+
+    out = []
+    for m in messages:
+        deleted = m.deleted_at is not None
+        att = None if deleted else att_by_msg.get(m.id)
+        groups = [] if deleted else reactions_by_msg.get(m.id, [])
+        reply_to_d = None
+        if m.reply_to_message_id is not None:
+            orig = reply_msgs.get(m.reply_to_message_id)
+            if orig is not None:
+                odel = orig.deleted_at is not None
+                reply_to_d = {
+                    "id": orig.id,
+                    "sender_id": orig.sender_id,
+                    "content": "" if odel else orig.content,
+                    "deleted": odel,
+                    "has_attachment": (not odel) and (att_by_msg.get(orig.id) is not None),
+                }
+        forwarded_from_d = None
+        if m.forwarded_from_user_id is not None:
+            u = fwd_users.get(m.forwarded_from_user_id)
+            if u is not None:
+                forwarded_from_d = {"id": u.id, "display_name": u.display_name}
+        out.append(MessageOut(
+            id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
+            content="" if deleted else m.content, created_at=m.created_at,
+            read_count=rc_by_msg.get(m.id, 0),
+            attachment=AttachmentOut.model_validate(att) if att else None,
+            edited_at=m.edited_at,
+            deleted=deleted,
+            deleted_at=m.deleted_at,
+            reactions=groups,
+            kind=m.kind,
+            reply_to=ReplyPreviewOut(**reply_to_d) if reply_to_d else None,
+            forwarded_from=ForwardedFromOut(**forwarded_from_d) if forwarded_from_d else None,
+        ))
+    return out
 
 
 def _conv_last_message_out(last: Message, read_count_value: int):
