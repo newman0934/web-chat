@@ -10,7 +10,7 @@
 >
 > docs/superpowers/specs/2026-06-19-chat-web-mvp-design.md
 >
-> 最後更新：2026-06-23
+> 最後更新：2026-06-24
 
 ---
 
@@ -187,18 +187,54 @@ SQLite + Postgres 雙環境綠）
 
 ---
 
+# 重構與優化（2026-06-24）
+
+線上狀態完成後做了一輪行為保留的整理,皆以既有測試(必要時加 E2E)當安全網、零行為變動。
+
+## 檔案架構重構（5 項）
+
+- `backend/app/ws/router.py`(595→120 行）：拆成 `ws/handlers/{messages,calls}.py`、
+  `ws/serializers.py`、`ws/wsutils.py`;router 只留端點 + 分派 + presence 生命週期。
+- `frontend/chat/src/components/Thread.tsx`(549→約 250 行）：拆出 `MessageBubble` /
+  `ReactionPicker` / `ReplyQuoteBlock` 各自成檔。
+- `ChatApp.tsx`：抽出 `wsDispatch.ts`(WS 分派純函式,新增單元測試）與
+  `useMessageActions.ts`(訊息動作 hook）。
+- `routers/conversations.py`：序列化下放 `services/conversations.py`
+  (`serialize_conversation_out` / `serialize_message_out`）。
+- WS 與 REST 訊息序列化收斂為單一真相(WS 改用 `MessageOut.model_dump`）。
+
+## 效能 / 安全 / UX 優化（5 項）
+
+- 上傳改**分塊讀取**:先看 Content-Length、累計超過 10MB 即中止,避免整檔載入記憶體
+  (記憶體耗盡風險)。
+- `list_conversations` 消除 **N+1**:`serialize_conversations_out` 批次化,查詢數固定
+  (成員/角色/使用者/最後訊息/已讀/未讀各一次,最後訊息用 window function)。等價性有測試保證。
+- 上傳失敗**顯示錯誤訊息**(原本靜默吞掉 413/415);Thread 紅色橫幅。
+- `emoji-mart`(~700KB)改 **React.lazy 動態載入**,拆出主 bundle、只在開「更多表情」時抓。
+- `message_reads.user_id` **加索引**(+ `0011` 遷移),加速 unread_count / mark_read。
+
+## 其他
+
+- 依全局語言規範,把殘留**英文註解 / docstring 統一為繁中**(保留識別字、API 路徑、套件名等豁免項)。
+- `docs/` 依 SDD 架構重整:每功能一資料夾(`specs/<feature>/`),舊 design/plan 併入。
+
+驗證:backend **139 passed**、chat vitest **111 passed**、三 app tsc 乾淨;
+受影響處(訊息動作 / presence / conversations 批次)於 SQLite + Postgres 雙環境驗過。
+
+---
+
 # 測試狀態
 
 ## Backend
 
-- Pytest：PASS
+- Pytest：PASS（139）
 
 ---
 
 ## Frontend
 
-- Vitest：PASS
-- TypeScript Type Check：PASS
+- Vitest：PASS（chat 111）
+- TypeScript Type Check：PASS（chat / shell / auth）
 
 ---
 
@@ -219,23 +255,14 @@ SQLite + Postgres 雙環境綠）
 
 ## main
 
-目前仍為 MVP 基礎版本。
+已含全部功能(MVP + 群組 / 附件 / 訊息動作 / 群組管理 / 通話 / 通知 / 線上狀態)
+與本輪重構優化。`feat/group-chat` 已合併回 main,兩者目前指向同一 commit。
 
 ---
 
 ## feat/group-chat
 
-目前最新整合分支。
-
-包含：
-
-- 群組聊天
-- 附件
-- 訊息動作
-- 通話
-- 通知
-
-尚未合併回 main。
+長期整合分支,與 main 同步(同一 commit)。後續開發在此或 main 皆可。
 
 ---
 
@@ -272,19 +299,9 @@ React Router v7 Future Flag Warning
 
 ---
 
-### emoji-mart Bundle 偏大
-
-目前直接打包進 Chat App。
-
-未來可改 Lazy Load。
-
----
-
-### Conversation 查詢存在 N+1
-
-目前 MVP 規模可接受。
-
-若資料量增加需優化。
+> 已解決(2026-06-24):emoji-mart Bundle 偏大 → 已改 React.lazy 動態載入;
+> Conversation 查詢 N+1 → 已批次化(serialize_conversations_out);
+> 上傳記憶體耗盡風險 → 已改分塊讀取。詳見「重構與優化（2026-06-24）」。
 
 ---
 
@@ -292,14 +309,9 @@ React Router v7 Future Flag Warning
 
 ## P1
 
-合併：
+✅ `feat/group-chat → main` 已合併(2026-06-24)。
 
-```text
-feat/group-chat
-→ main
-```
-
-建立正式 Release。
+接著可建立正式 Release / 打 tag。
 
 ---
 
@@ -325,12 +337,8 @@ feat/group-chat
 
 ## P4
 
-優化查詢效能。
-
-包含：
-
-- Message Reads Index
-- Conversation N+1
+✅ 查詢效能優化已完成(2026-06-24):Message Reads Index、Conversation N+1。
+後續若有需要再針對其他熱點(如群組大量訊息分頁)評估。
 
 ---
 
