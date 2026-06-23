@@ -22,6 +22,14 @@ from app.models import Attachment, Message
 
 pytestmark = pytest.mark.asyncio
 
+def _recv(ws):
+    """收下一個非 presence frame(presence 為好友上/下線廣播,與本檔測試無關)。"""
+    while True:
+        msg = ws.receive_json()
+        if msg.get("type") != "presence":
+            return msg
+
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -111,8 +119,8 @@ async def test_forward_text_broadcasts_to_target_members(
             })
 
             # Both Bob (forwarder) and Carol (target member) should receive the broadcast
-            evt_b = wb.receive_json()
-            evt_c = wc.receive_json()
+            evt_b = _recv(wb)
+            evt_c = _recv(wc)
 
     for evt in (evt_b, evt_c):
         assert evt["type"] == "message"
@@ -160,7 +168,7 @@ async def test_forward_with_attachment_copies_attachment_row(
                 "message_id": orig_id,
                 "to_conversation_id": target_conv_id,
             })
-            evt = wb.receive_json()
+            evt = _recv(wb)
 
     assert evt["type"] == "message"
     msg = evt["message"]
@@ -219,7 +227,7 @@ async def test_forward_to_non_member_conversation_forbidden(
                 "message_id": orig_id,
                 "to_conversation_id": target_conv_id,
             })
-            err = wb.receive_json()
+            err = _recv(wb)
 
     assert err["type"] == "error"
     assert err["reason"] == "forbidden"
@@ -259,7 +267,7 @@ async def test_forward_message_in_unseen_conversation_forbidden(
                 "message_id": secret_msg_id,
                 "to_conversation_id": bob_alice_conv_id,
             })
-            err = wb.receive_json()
+            err = _recv(wb)
 
     assert err["type"] == "error"
     assert err["reason"] == "forbidden"
@@ -294,7 +302,7 @@ async def test_forward_deleted_message_forbidden(
                 "message_id": del_id,
                 "to_conversation_id": target_conv_id,
             })
-            err = wb.receive_json()
+            err = _recv(wb)
 
     assert err["type"] == "error"
     assert err["reason"] == "forbidden"
@@ -322,7 +330,7 @@ async def test_forward_missing_to_conversation_id_invalid_payload(
                 "message_id": orig_id,
                 # to_conversation_id intentionally omitted
             })
-            err = wb.receive_json()
+            err = _recv(wb)
 
     assert err["type"] == "error"
     assert err["reason"] == "invalid_payload"
@@ -348,7 +356,7 @@ async def test_forward_malformed_message_id_invalid_payload(
                 "message_id": "not-a-uuid",
                 "to_conversation_id": src_conv_id,
             })
-            err = wb.receive_json()
+            err = _recv(wb)
 
     assert err["type"] == "error"
     assert err["reason"] == "invalid_payload"

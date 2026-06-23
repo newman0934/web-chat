@@ -9,7 +9,9 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from starlette.testclient import TestClient
 
+from app.main import app
 from app.models import Contact, User
 from app.services import presence as presence_svc
 from app.ws.manager import ConnectionManager
@@ -97,20 +99,14 @@ async def test_get_friend_ids(session_factory):
         assert ids == {f1.id, f2.id}
 
 
-@pytest.mark.asyncio
-async def test_set_last_seen_writes_and_returns_now(session_factory):
-    """set_last_seen 寫入 now 並回傳;回傳為 tz-aware UTC。"""
-    async with session_factory() as db:
-        u = await _make_user(db, "u")
-        before = datetime.now(timezone.utc)
-        ts = await presence_svc.set_last_seen(db, u.id)
-        await db.commit()
-        assert ts is not None
-        assert ts.tzinfo is not None
-        assert ts >= before
-        refreshed = await db.get(User, u.id)
-        await db.refresh(refreshed)
-        assert refreshed.last_seen_at is not None
+def test_manager_mark_and_get_last_seen():
+    """manager 以記憶體保存 last_seen;未設者為 None。"""
+    mgr = ConnectionManager()
+    uid = uuid.uuid4()
+    assert mgr.get_last_seen(uid) is None
+    ts = datetime.now(timezone.utc)
+    mgr.mark_last_seen(uid, ts)
+    assert mgr.get_last_seen(uid) == ts
 
 
 def test_build_presence_event_online():
@@ -142,16 +138,141 @@ def test_build_presence_event_naive_last_seen_treated_utc():
     assert evt["last_seen_at"] == "2026-06-23T01:02:03+00:00"
 
 
-@pytest.mark.asyncio
-async def test_presence_for_contacts_batch(session_factory):
-    """presence_for_contacts 批次回每個 id 的 last_seen(未設為 None)。"""
-    async with session_factory() as db:
-        a = await _make_user(db, "a")
-        b = await _make_user(db, "b")
-        await presence_svc.set_last_seen(db, a.id)
-        await db.commit()
+# --- Task 3：WS 廣播 + /contacts 帶 presence ---
 
-        m = await presence_svc.presence_for_contacts(db, {a.id, b.id})
-        assert set(m.keys()) == {a.id, b.id}
-        assert m[a.id] is not None
-        assert m[b.id] is None
+
+async def _pair(client, register_user, auth_headers, a, b):
+    """註冊兩人並加好友,回 (tokenA, tokenB, conv_id)。"""
+    ta = await register_user(a, "Alice")
+    tb = await register_user(b, "Bob")
+    resp = await client.post("/contacts", json={"email": b}, headers=auth_headers(ta))
+    return ta, tb, resp.json()["conversation_id"]
+
+
+async def _uid(session_factory, email):
+    from sqlalchemy import select
+
+    async with session_factory() as db:
+        res = await db.execute(select(User).where(User.email == email))
+        return str(res.scalar_one().id)
+
+
+@pytest.mark.asyncio
+async def test_first_connect_broadcasts_online_to_online_friend(
+    client, register_user, auth_headers, session_factory
+):
+    """PR-01:好友首條連線上線 → 在線的我收到 presence online。"""
+    ta, tb, _ = await _pair(client, register_user, auth_headers,
+                            "pa@example.com", "pb@example.com")
+    bob_id = await _uid(session_factory, "pb@example.com")
+    with TestClient(app) as tc:
+        with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
+            with tc.websocket_connect(f"/ws?token={tb}"):
+                evt = ws_alice.receive_json()
+    assert evt["type"] == "presence"
+    assert evt["user_id"] == bob_id
+    assert evt["online"] is True
+    assert evt["last_seen_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_last_disconnect_sets_last_seen_and_broadcasts_offline(
+    client, register_user, auth_headers, session_factory
+):
+    """PR-02:好友末條連線斷開 → 我收到 offline + last_seen_at;DB 更新。"""
+    ta, tb, _ = await _pair(client, register_user, auth_headers,
+                            "pa@example.com", "pb@example.com")
+    bob_id = await _uid(session_factory, "pb@example.com")
+    with TestClient(app) as tc:
+        with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
+            with tc.websocket_connect(f"/ws?token={tb}"):
+                ws_alice.receive_json()  # online
+            evt = ws_alice.receive_json()  # bob 離線
+    assert evt["type"] == "presence"
+    assert evt["user_id"] == bob_id
+    assert evt["online"] is False
+    assert evt["last_seen_at"] is not None
+    # manager(記憶體)也記下了 Bob 的 last_seen
+    from app.ws.manager import manager
+
+    assert manager.get_last_seen(uuid.UUID(bob_id)) is not None
+
+
+@pytest.mark.asyncio
+async def test_second_connection_no_duplicate_online(
+    client, register_user, auth_headers, session_factory
+):
+    """PR-04:同一好友第二條連線不重播 online。"""
+    ta, tb, conv = await _pair(client, register_user, auth_headers,
+                               "pa@example.com", "pb@example.com")
+    with TestClient(app) as tc:
+        with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
+            with tc.websocket_connect(f"/ws?token={tb}") as ws_bob1:
+                ws_alice.receive_json()  # online(首條)
+                with tc.websocket_connect(f"/ws?token={tb}"):  # 第二條,不應廣播
+                    ws_bob1.send_json({"type": "message", "conversation_id": conv,
+                                       "content": "hi", "temp_id": "t"})
+                    ws_bob1.receive_json()  # ack
+                    frame = ws_alice.receive_json()
+    # 若第二條誤播 online,alice 的下一個 frame 會是 presence 而非 message
+    assert frame["type"] == "message"
+
+
+@pytest.mark.asyncio
+async def test_non_last_disconnect_no_false_offline(
+    client, register_user, auth_headers, session_factory
+):
+    """PR-05:仍有其他連線時,某條斷開不誤報 offline。"""
+    ta, tb, conv = await _pair(client, register_user, auth_headers,
+                               "pa@example.com", "pb@example.com")
+    with TestClient(app) as tc:
+        with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
+            with tc.websocket_connect(f"/ws?token={tb}") as ws_bob1:
+                ws_alice.receive_json()  # online
+                with tc.websocket_connect(f"/ws?token={tb}"):
+                    pass  # 第二條開→關:非首非尾,皆不廣播
+                ws_bob1.send_json({"type": "message", "conversation_id": conv,
+                                   "content": "hi", "temp_id": "t"})
+                ws_bob1.receive_json()  # ack
+                frame = ws_alice.receive_json()
+    assert frame["type"] == "message"  # 非 offline
+
+
+@pytest.mark.asyncio
+async def test_non_friend_presence_not_broadcast(
+    client, register_user, auth_headers, session_factory
+):
+    """PR-06:非好友上線不廣播給我。"""
+    ta, tb, _ = await _pair(client, register_user, auth_headers,
+                            "pa@example.com", "pb@example.com")
+    tc_token = await register_user("pc@example.com", "Carol")  # 非好友
+    bob_id = await _uid(session_factory, "pb@example.com")
+    with TestClient(app) as tc:
+        with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
+            with tc.websocket_connect(f"/ws?token={tc_token}"):  # 非好友先上線
+                with tc.websocket_connect(f"/ws?token={tb}"):  # 好友後上線
+                    evt = ws_alice.receive_json()
+    # alice 的第一個 frame 必為 bob(好友);carol 不該外洩
+    assert evt["type"] == "presence"
+    assert evt["user_id"] == bob_id
+
+
+@pytest.mark.asyncio
+async def test_contacts_carries_online_and_last_seen(
+    client, register_user, auth_headers, session_factory
+):
+    """PR-03/08:GET /contacts 每筆含 online / last_seen_at;從未上線者 false/null。"""
+    ta, tb, _ = await _pair(client, register_user, auth_headers,
+                            "pa@example.com", "pb@example.com")
+    # 再加一個從未上線的好友 Carol
+    await register_user("pc@example.com", "Carol")
+    await client.post("/contacts", json={"email": "pc@example.com"}, headers=auth_headers(ta))
+
+    with TestClient(app) as tc:
+        with tc.websocket_connect(f"/ws?token={tb}"):  # Bob 在線
+            resp = await client.get("/contacts", headers=auth_headers(ta))
+    assert resp.status_code == 200
+    by_email = {c["email"]: c for c in resp.json()}
+    assert by_email["pb@example.com"]["online"] is True
+    assert by_email["pc@example.com"]["online"] is False
+    assert by_email["pc@example.com"]["last_seen_at"] is None

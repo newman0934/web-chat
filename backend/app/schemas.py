@@ -62,6 +62,12 @@ class ContactOut(BaseModel):
     email: EmailStr
     display_name: str
     conversation_id: uuid.UUID
+    online: bool = False
+    last_seen_at: datetime | None = None  # 在線時通常為 null（前端只在離線顯示）
+
+    @field_serializer("last_seen_at")
+    def _ser_last_seen(self, dt: datetime | None) -> str | None:
+        return _utc_iso(dt)
 
 
 # ---- attachments ----

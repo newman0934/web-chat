@@ -44,6 +44,25 @@ async def client(session_factory):
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_ws_singletons():
+    """每個測試前後清空 WS 程序級單例(manager 連線、presence 快取)。
+
+    manager 與 presence 快取是 module 級全域,跨測試會殘留上一個 TestClient 的(已關閉)
+    websocket;後續測試的 presence 廣播若送到殘留連線會卡死。逐測重置確保隔離。
+    """
+    from app.ws import router as ws_router
+    from app.ws.manager import manager
+
+    manager._connections.clear()
+    manager._last_seen.clear()
+    ws_router._presence_cache.clear()
+    yield
+    manager._connections.clear()
+    manager._last_seen.clear()
+    ws_router._presence_cache.clear()
+
+
 @pytest.fixture
 def auth_headers():
     def _make(token: str) -> dict:

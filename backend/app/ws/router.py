@@ -33,6 +33,7 @@ from app.services.conversations import (
     read_count as read_count_fn,
 )
 from app.services.notifications import create_notification, serialize_notification
+from app.services.presence import build_presence_event, get_friend_ids
 from app.timeutils import to_utc_iso
 from app.ws.manager import manager
 
@@ -43,6 +44,27 @@ async def _push_notification(recipient_id: uuid.UUID, payload: dict) -> None:
     """通知建立後，收件人在線即推 server→client {type:"notification"}。"""
     if manager.is_online(recipient_id):
         await manager.send_to_user(recipient_id, {"type": "notification", "notification": payload})
+
+
+# presence 好友快取:user_id → 好友 id 集合。於「連線」這個健康路徑(可安全讀 DB)填入,
+# 「斷線」時直接取用以廣播。WHY 不在斷線 `finally` 內查 DB:starlette TestClient 的關閉
+# (teardown join)路徑中於 WS 端點 disconnect 開 DB session 會死結;連線當下頻繁寫 DB 在
+# 整體測試下也會誘發 SQLite 死結。故 presence 全程不從 WS 生命週期寫 DB,last_seen 改記在
+# 記憶體的 manager(見 ws/manager.py),與 presence「in-memory、單程序」架構一致。
+_presence_cache: dict[uuid.UUID, set[uuid.UUID]] = {}
+
+
+async def _emit_presence(
+    friend_ids: set[uuid.UUID],
+    user_id: uuid.UUID,
+    online: bool,
+    last_seen_at: datetime | None,
+) -> None:
+    """把上/下線事件推給「在線好友」(不碰 DB;離線好友靠下次 /contacts 快照)。"""
+    event = build_presence_event(user_id, online, last_seen_at)
+    for fid in friend_ids:
+        if manager.is_online(fid):
+            await manager.send_to_user(fid, event)
 
 
 def _stringify_uuid_dict(d: dict | None, uuid_keys: list[str]) -> dict | None:
@@ -117,7 +139,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
         await websocket.close(code=1008)
         return
 
-    await manager.connect(user.id, websocket)
+    is_first = await manager.connect(user.id, websocket)
+    if is_first:
+        # 首條連線 = 剛上線:在「健康路徑」讀好友清單並快取(斷線時不再查 DB),廣播 online。
+        async with db_module.SessionLocal() as db:
+            friend_ids = await get_friend_ids(db, user.id)
+        _presence_cache[user.id] = friend_ids
+        await _emit_presence(friend_ids, user.id, True, None)
     try:
         # 持續接收 client 訊息直到斷線。
         while True:
@@ -126,7 +154,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
     except WebSocketDisconnect:
         pass  # 正常斷線
     finally:
-        manager.disconnect(user.id, websocket)  # 不論如何都要登出在線狀態
+        is_last = manager.disconnect(user.id, websocket)  # 不論如何都要登出在線狀態
+        if is_last:
+            # 末條連線斷開 = 剛離線:記下 last_seen(記憶體,不碰 DB)再用快取好友清單廣播 offline。
+            now = datetime.now(timezone.utc)
+            manager.mark_last_seen(user.id, now)
+            friend_ids = _presence_cache.pop(user.id, set())
+            await _emit_presence(friend_ids, user.id, False, now)
 
 
 async def _handle_client_message(websocket: WebSocket, user: User, data: dict) -> None:

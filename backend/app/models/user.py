@@ -22,7 +22,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # 最後一條 WS 連線斷開的時間;在線(有連線)時不顯示時間。NULL = 從未上線。
+    # 保留欄位:未來的耐久化「最後上線時間」(跨重啟 / 多 worker)。
+    # 目前 presence 為 in-memory、單程序,last_seen 存在 ConnectionManager(見 ws/manager.py),
+    # 執行期不寫此欄位 —— 因為從 WS 生命週期寫 DB 會在 starlette TestClient 關閉路徑死結。
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

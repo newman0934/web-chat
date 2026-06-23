@@ -5,7 +5,7 @@
 ## 功能
 
 - [ ] AC-1 / PR-01：好友首條連線上線 → 在線的我收到 presence online
-- [ ] AC-2 / PR-02：好友末條連線斷開 → 我收到 offline + last_seen_at;DB 的 last_seen_at 更新
+- [ ] AC-2 / PR-02：好友末條連線斷開 → 我收到 offline + last_seen_at;manager(記憶體)記下 last_seen
 - [ ] AC-3 / PR-04：第二條連線不重播 online
 - [ ] AC-3 / PR-05：仍有連線時不誤報 offline
 - [ ] AC-4 / PR-03：GET /contacts 每筆含 online / last_seen_at
@@ -25,9 +25,9 @@
 
 ## 非功能
 
-- [ ] NFR-3：末條離線先寫 last_seen_at 再廣播(事件時間與 DB 一致)
-- [ ] NFR-4：last_seen_at tz-aware(to_utc_iso);SQLite/Postgres 皆正確
-- [ ] 0010 遷移於 SQLite 與 Postgres 皆成功
+- [ ] NFR-3：末條離線先在記憶體寫 last_seen 再廣播(事件時間與 manager 一致)
+- [ ] NFR-4：last_seen tz-aware(to_utc_iso);SQLite/Postgres 皆正確
+- [ ] 0010 遷移於 SQLite 與 Postgres 皆成功(欄位保留,執行期不寫)
 
 ## 測試與流程
 
