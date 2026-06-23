@@ -20,6 +20,7 @@ from app.services.conversations import (
     get_member_ids,
     is_group_admin,
     serialize_conversation_out,
+    serialize_conversations_out,
     serialize_message_out,
     would_leave_groupless_of_admin,
 )
@@ -38,8 +39,8 @@ async def list_conversations(
         .join(ConversationMember, ConversationMember.conversation_id == Conversation.id)
         .where(ConversationMember.user_id == current_user.id)
     )
-    conversations = rows.scalars().all()
-    out = [await serialize_conversation_out(db, c, current_user) for c in conversations]
+    conversations = list(rows.scalars().all())
+    out = await serialize_conversations_out(db, conversations, current_user)
     # 排序 key 一律正規化成 tz-aware（UTC）：Postgres 的 TIMESTAMPTZ 回 aware、SQLite 回 naive，
     # 兩者混排會 TypeError（can't compare offset-naive and offset-aware）。無訊息對話墊最小時間。
     def _sort_key(c) -> datetime:

@@ -285,9 +285,27 @@ async def serialize_message_out(
     )
 
 
+def _conv_last_message_out(last: Message, read_count_value: int):
+    """對話清單預覽用的 last_message（刻意精簡:不帶 attachment / reactions / reply / edited_at）。
+
+    單一真相,供 serialize_conversation_out 與 serialize_conversations_out 共用,避免兩處外型分歧。
+    """
+    from app.schemas import MessageOut
+
+    is_deleted = last.deleted_at is not None
+    return MessageOut(
+        id=last.id, conversation_id=last.conversation_id, sender_id=last.sender_id,
+        content="" if is_deleted else last.content, created_at=last.created_at,
+        read_count=read_count_value,
+        deleted=is_deleted,
+        deleted_at=last.deleted_at,
+        kind=last.kind,
+    )
+
+
 async def serialize_conversation_out(db: AsyncSession, conv: Conversation, me: User):
     """把一個 Conversation 組成 REST 的 ConversationOut（成員、對方、最後訊息、未讀數、角色）。"""
-    from app.schemas import ConversationOut, MessageOut, UserOut
+    from app.schemas import ConversationOut, UserOut
 
     member_ids = await get_member_ids(db, conv.id)
     # 一次撈齊成員（取代逐一 db.get 的 N+1），再依 member_ids 原順序還原。
@@ -305,17 +323,7 @@ async def serialize_conversation_out(db: AsyncSession, conv: Conversation, me: U
         .limit(1)
     )
     last = last_res.scalar_one_or_none()
-    last_out = None
-    if last is not None:
-        is_last_deleted = last.deleted_at is not None
-        last_out = MessageOut(
-            id=last.id, conversation_id=last.conversation_id, sender_id=last.sender_id,
-            content="" if is_last_deleted else last.content, created_at=last.created_at,
-            read_count=await read_count(db, last.id),
-            deleted=is_last_deleted,
-            deleted_at=last.deleted_at,
-            kind=last.kind,
-        )
+    last_out = _conv_last_message_out(last, await read_count(db, last.id)) if last is not None else None
 
     roles = await get_role_map(db, conv.id)
     return ConversationOut(
@@ -328,6 +336,100 @@ async def serialize_conversation_out(db: AsyncSession, conv: Conversation, me: U
         unread_count=await unread_count(db, conv.id, me.id),
         roles=roles,
     )
+
+
+async def serialize_conversations_out(db: AsyncSession, convs: list[Conversation], me: User):
+    """批次版:把多個 Conversation 一次組成 ConversationOut[]，查詢數固定(不隨對話數成長)。
+
+    取代「逐對話各跑 ~6 個查詢」的 N+1：成員/角色、使用者、最後訊息、最後訊息已讀數、
+    未讀數各只一次。輸出與逐筆 serialize_conversation_out 等價(見 test_conversations_batch)。
+    """
+    from app.schemas import ConversationOut, UserOut
+
+    if not convs:
+        return []
+    conv_ids = [c.id for c in convs]
+
+    # Q1:全部成員 + 角色(一次)。
+    mrows = (await db.execute(
+        select(
+            ConversationMember.conversation_id,
+            ConversationMember.user_id,
+            ConversationMember.role,
+        ).where(ConversationMember.conversation_id.in_(conv_ids))
+    )).all()
+    members_by_conv: dict[uuid.UUID, list[uuid.UUID]] = {}
+    roles_by_conv: dict[uuid.UUID, dict[uuid.UUID, str]] = {}
+    user_ids: set[uuid.UUID] = set()
+    for cid, uid, role in mrows:
+        members_by_conv.setdefault(cid, []).append(uid)
+        roles_by_conv.setdefault(cid, {})[uid] = role
+        user_ids.add(uid)
+
+    # Q2:全部成員 User(一次)。
+    urows = (await db.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()
+    user_by_id = {u.id: u for u in urows}
+
+    # Q3:每對話最後一則訊息(window function 取 partition 內 created_at 最新者,一次)。
+    rn = func.row_number().over(
+        partition_by=Message.conversation_id,
+        order_by=Message.created_at.desc(),
+    ).label("rn")
+    sub = select(Message.id, Message.conversation_id, rn).where(
+        Message.conversation_id.in_(conv_ids)
+    ).subquery()
+    last_ids = (await db.execute(select(sub.c.id).where(sub.c.rn == 1))).scalars().all()
+    last_by_conv: dict[uuid.UUID, Message] = {}
+    read_count_by_msg: dict[uuid.UUID, int] = {}
+    if last_ids:
+        last_msgs = (await db.execute(
+            select(Message).where(Message.id.in_(last_ids))
+        )).scalars().all()
+        last_by_conv = {m.conversation_id: m for m in last_msgs}
+        # Q4:這些最後訊息的已讀數(一次 group by)。
+        rc_rows = (await db.execute(
+            select(MessageRead.message_id, func.count())
+            .where(MessageRead.message_id.in_(last_ids))
+            .group_by(MessageRead.message_id)
+        )).all()
+        read_count_by_msg = {mid: cnt for mid, cnt in rc_rows}
+
+    # Q5:每對話未讀數(一次 group by;與 unread_count() 同條件:非自己送、且自己未讀)。
+    read_subq = select(MessageRead.message_id).where(MessageRead.user_id == me.id)
+    ur_rows = (await db.execute(
+        select(Message.conversation_id, func.count())
+        .where(
+            Message.conversation_id.in_(conv_ids),
+            Message.sender_id != me.id,
+            not_(Message.id.in_(read_subq)),
+        )
+        .group_by(Message.conversation_id)
+    )).all()
+    unread_by_conv = {cid: cnt for cid, cnt in ur_rows}
+
+    out = []
+    for c in convs:
+        member_ids = members_by_conv.get(c.id, [])
+        members = [user_by_id[uid] for uid in member_ids if uid in user_by_id]
+        other = None
+        if c.type == "direct":
+            other = next((u for u in members if u.id != me.id), None)
+        last = last_by_conv.get(c.id)
+        last_out = (
+            _conv_last_message_out(last, read_count_by_msg.get(last.id, 0))
+            if last is not None else None
+        )
+        out.append(ConversationOut(
+            id=c.id,
+            type=c.type,
+            name=c.name,
+            other_user=UserOut.model_validate(other) if other else None,
+            members=[UserOut.model_validate(u) for u in members],
+            last_message=last_out,
+            unread_count=unread_by_conv.get(c.id, 0),
+            roles=roles_by_conv.get(c.id, {}),
+        ))
+    return out
 
 
 async def would_leave_groupless_of_admin(
