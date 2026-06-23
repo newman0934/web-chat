@@ -12,6 +12,7 @@ import { GroupInfoPanel } from './components/GroupInfoPanel';
 import { NotificationCenter } from './components/NotificationCenter';
 import { Sidebar } from './components/Sidebar';
 import { Thread } from './components/Thread';
+import type { UploadResult } from './components/Thread';
 import { useCall } from './useCall';
 import { formatLastSeen } from './presence';
 import { useChatStore } from './store';
@@ -180,12 +181,16 @@ export default function ChatApp({
   );
 
   const onUpload = useCallback(
-    async (file: File) => {
+    async (file: File): Promise<UploadResult> => {
       try {
-        return await api.uploadFile(file);
+        return { ok: true, attachment: await api.uploadFile(file) };
       } catch (err) {
-        if (err instanceof UnauthorizedError) onLogout();
-        return null;
+        if (err instanceof UnauthorizedError) {
+          onLogout();
+          return { ok: false, message: '憑證失效，請重新登入' };
+        }
+        if (err instanceof ApiError) return { ok: false, message: err.message };
+        return { ok: false, message: '上傳失敗' };
       }
     },
     [api, onLogout],

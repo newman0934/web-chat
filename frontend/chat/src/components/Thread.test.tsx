@@ -87,6 +87,45 @@ describe('Thread', () => {
     expect(screen.queryByTestId('presence-status')).toBeNull();
   });
 
+  function renderUpload(onUpload: (f: File) => Promise<unknown>) {
+    return render(
+      <Thread
+        title="Bob"
+        messages={[]}
+        currentUserId="me"
+        isGroup={false}
+        memberNames={{}}
+        canLoadMore={false}
+        onLoadMore={vi.fn()}
+        onSend={vi.fn()}
+        onRetry={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onReact={vi.fn()}
+        attachmentUrl={(id) => 'http://api/attachments/' + id}
+        onUpload={onUpload as never}
+      />,
+    );
+  }
+
+  it('上傳失敗時顯示錯誤訊息', async () => {
+    const onUpload = vi.fn().mockResolvedValue({ ok: false, message: '檔案過大（上限 10MB）' });
+    const { container } = renderUpload(onUpload);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(['x'], 'big.bin')] } });
+    expect(await screen.findByText('檔案過大（上限 10MB）')).toBeInTheDocument();
+  });
+
+  it('上傳成功時顯示待送附件名、不顯示錯誤', async () => {
+    const att = { id: 'a1', original_name: 'pic.png', content_type: 'image/png', size: 3, is_image: true };
+    const onUpload = vi.fn().mockResolvedValue({ ok: true, attachment: att });
+    const { container } = renderUpload(onUpload);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(['x'], 'pic.png')] } });
+    expect(await screen.findByText('pic.png')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('我方 sending 訊息顯示「傳送中…」', () => {
     render(
       <Thread

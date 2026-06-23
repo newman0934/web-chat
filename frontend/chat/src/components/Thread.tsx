@@ -7,6 +7,11 @@ import type { Attachment, MessageVersion, ReplyPreview } from '../../../contract
 import type { ChatMessage } from '../messageStore';
 import { MessageBubble } from './MessageBubble';
 
+/** 上傳結果：成功帶 attachment，失敗帶可顯示的訊息（如「檔案過大」）。 */
+export type UploadResult =
+  | { ok: true; attachment: Attachment }
+  | { ok: false; message: string };
+
 interface ThreadProps {
   title: string;
   /** 1對1 對方的 presence 文案（「在線」/「最後上線 X」/「離線」）；群組或無對象時為 null。 */
@@ -20,7 +25,7 @@ interface ThreadProps {
   onSend: (content: string, attachmentId?: string, replyToMessageId?: string, replyPreview?: ReplyPreview | null) => void;
   onRetry: (tempId: string) => void;
   attachmentUrl: (id: string) => string;
-  onUpload: (file: File) => Promise<Attachment | null>;
+  onUpload: (file: File) => Promise<UploadResult>;
   onEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
   onReact: (id: string, emoji: string) => void;
@@ -57,6 +62,7 @@ export function Thread({
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<Attachment | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -72,10 +78,12 @@ export function Thread({
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
+    setUploadError(null);
     setUploading(true);
-    const att = await onUpload(f);
+    const res = await onUpload(f);
     setUploading(false);
-    if (att) setPending(att);
+    if (res.ok) setPending(res.attachment);
+    else setUploadError(res.message);
   };
 
   /** 捲動到指定訊息（若在清單內），否則 no-op。 */
@@ -225,6 +233,22 @@ export function Thread({
                 aria-label="移除附件"
                 onClick={() => setPending(null)}
                 className="ml-auto text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          {uploadError && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-lg bg-red-50 border-l-4 border-red-400 px-3 py-1 text-sm text-red-700"
+            >
+              <span className="truncate">{uploadError}</span>
+              <button
+                type="button"
+                aria-label="關閉上傳錯誤"
+                onClick={() => setUploadError(null)}
+                className="ml-auto text-red-400 hover:text-red-600 shrink-0"
               >
                 ✕
               </button>
