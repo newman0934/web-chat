@@ -6,6 +6,14 @@ from app.main import app
 pytestmark = pytest.mark.asyncio
 
 
+def _recv(ws):
+    """收下一個非 presence frame(presence 為好友上/下線廣播,與本檔測試無關)。"""
+    while True:
+        msg = ws.receive_json()
+        if msg.get("type") != "presence":
+            return msg
+
+
 async def _setup(client, register_user, auth_headers):
     alice = await register_user("vva@example.com", "Alice")
     bob = await register_user("vvb@example.com", "Bob")
@@ -24,7 +32,7 @@ async def test_call_offer_relayed_to_online_friend(client, register_user, auth_h
                 "type": "call_offer", "to_user_id": bid,
                 "sdp": {"type": "offer", "sdp": "v=0..."},
             })
-            got = ws_bob.receive_json()
+            got = _recv(ws_bob)
             assert got["type"] == "call_offer"
             assert got["from"]["id"] == aid
             assert got["from"]["display_name"] == "Alice"
@@ -40,7 +48,7 @@ async def test_call_answer_relayed(client, register_user, auth_headers):
                 "type": "call_answer", "to_user_id": aid,
                 "sdp": {"type": "answer", "sdp": "v=0..."},
             })
-            got = ws_alice.receive_json()
+            got = _recv(ws_alice)
             assert got["type"] == "call_answer"
             assert got["from"]["id"] == bid
 
@@ -51,7 +59,7 @@ async def test_call_signal_rejected_for_non_friend(client, register_user, auth_h
     with TestClient(app) as tc:
         with tc.websocket_connect(f"/ws?token={outsider}") as ws:
             ws.send_json({"type": "call_offer", "to_user_id": bid, "sdp": {"type": "offer", "sdp": "x"}})
-            resp = ws.receive_json()
+            resp = _recv(ws)
             assert resp["type"] == "error"
             assert resp["reason"] == "forbidden"
 
@@ -61,6 +69,6 @@ async def test_call_offer_to_offline_friend_returns_unavailable(client, register
     with TestClient(app) as tc:
         with tc.websocket_connect(f"/ws?token={alice}") as ws_alice:
             ws_alice.send_json({"type": "call_offer", "to_user_id": bid, "sdp": {"type": "offer", "sdp": "x"}})
-            resp = ws_alice.receive_json()
+            resp = _recv(ws_alice)
             assert resp["type"] == "call_unavailable"
             assert resp["to_user_id"] == bid

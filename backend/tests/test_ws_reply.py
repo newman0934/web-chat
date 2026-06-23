@@ -11,6 +11,14 @@ from app.models import Message
 
 pytestmark = pytest.mark.asyncio
 
+def _recv(ws):
+    """收下一個非 presence frame(presence 為好友上/下線廣播,與本檔測試無關)。"""
+    while True:
+        msg = ws.receive_json()
+        if msg.get("type") != "presence":
+            return msg
+
+
 
 async def _setup_pair(client, register_user, auth_headers, session_factory):
     """Register Alice & Bob, make them contacts, return tokens + conv_id."""
@@ -64,8 +72,8 @@ async def test_reply_same_conversation(client, register_user, auth_headers, sess
                 "temp_id": "t-1",
                 "reply_to_message_id": orig_id,
             })
-            ack = wb.receive_json()  # ack → Bob (sender)
-            broadcast = wa.receive_json()  # message → Alice (recipient)
+            ack = _recv(wb)  # ack → Bob (sender)
+            broadcast = _recv(wa)  # message → Alice (recipient)
 
     assert ack["type"] == "ack"
     assert ack["temp_id"] == "t-1"
@@ -121,7 +129,7 @@ async def test_reply_cross_conversation_rejected(client, register_user, auth_hea
                 "temp_id": "t-cross",
                 "reply_to_message_id": other_msg_id,  # belongs to other_conv!
             })
-            err = wb.receive_json()
+            err = _recv(wb)
 
     assert err["type"] == "error"
     assert err["reason"] == "invalid_reply"
@@ -162,7 +170,7 @@ async def test_reply_to_soft_deleted_message_rejected(client, register_user, aut
                 "temp_id": "t-del",
                 "reply_to_message_id": orig_id,
             })
-            err = wb.receive_json()
+            err = _recv(wb)
 
     assert err["type"] == "error"
     assert err["reason"] == "invalid_reply"
@@ -187,7 +195,7 @@ async def test_reply_malformed_uuid_invalid_payload(client, register_user, auth_
                 "temp_id": "t-bad",
                 "reply_to_message_id": "not-a-uuid",
             })
-            err = wb.receive_json()
+            err = _recv(wb)
 
     assert err["type"] == "error"
     assert err["reason"] == "invalid_payload"

@@ -135,6 +135,24 @@ Tests use **fresh per-run accounts** with timestamped emails (e.g. `alice-reply-
 | NB-14 離線補齊 | 離線期間的通知上線後 `GET` 補得回 |
 | NUI 鈴鐺 UI | 紅點未讀 → 展開通知中心 → 點通知導向對話並清未讀 |
 
+### 線上狀態(Presence）
+
+`presence-api.spec.ts`(REST+WS,無 UI)。presence 為 in-memory、單程序;last_seen 存
+`ConnectionManager`(不落 DB),故 SQLite 與 Postgres 行為一致(雙環境皆驗綠)。
+
+| 場景 | 涵蓋內容 |
+|---|---|
+| PR-01 上線廣播 | 好友首條連線上線 → 在線的我收到 `presence{online:true}` |
+| PR-02 離線廣播 | 好友末條連線斷開 → 我收到 `presence{online:false, last_seen_at}` |
+| PR-03/08 contacts 快照 | `GET /contacts` 帶 online/last_seen_at;從未上線好友 false/null |
+| PR-04 不重播 | 同一好友第二條連線不再廣播 online |
+| PR-05 不誤報 | 倒數第二條連線斷開不誤報 offline;末條才 offline |
+| PR-06 隱私 | 非好友上線不廣播給我 |
+
+> 前端呈現(Sidebar 綠/灰點、Thread header「在線/最後上線 X/離線」)由 chat vitest 元件測試覆蓋
+> (`presence.test.ts`、`store.test.ts`、`Sidebar.test.tsx`、`Thread.test.tsx`)。
+> backend `test_presence.py` 完整覆蓋 manager 首尾、廣播、權限與 /contacts。
+
 ## Environment Notes
 
 - **Module Federation constraint**: auth/chat remotes MUST be `build` + `preview`, NOT `vite dev`. The dev server doesn't produce `remoteEntry.js`, causing 404 in the host.

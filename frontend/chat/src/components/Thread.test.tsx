@@ -55,6 +55,38 @@ describe('Thread', () => {
     expect(screen.getByText('哈囉')).toBeInTheDocument();
   });
 
+  function renderWithStatus(statusText: string | null) {
+    return render(
+      <Thread
+        title="Bob"
+        statusText={statusText}
+        messages={[]}
+        currentUserId="me"
+        isGroup={false}
+        memberNames={{}}
+        canLoadMore={false}
+        onLoadMore={vi.fn()}
+        onSend={vi.fn()}
+        onRetry={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onReact={vi.fn()}
+        attachmentUrl={(id) => 'http://api/attachments/' + id}
+        onUpload={vi.fn()}
+      />,
+    );
+  }
+
+  it('header 顯示 presence 狀態文案', () => {
+    renderWithStatus('在線');
+    expect(screen.getByTestId('presence-status')).toHaveTextContent('在線');
+  });
+
+  it('statusText 為 null 時不顯示狀態列(如群組)', () => {
+    renderWithStatus(null);
+    expect(screen.queryByTestId('presence-status')).toBeNull();
+  });
+
   it('我方 sending 訊息顯示「傳送中…」', () => {
     render(
       <Thread

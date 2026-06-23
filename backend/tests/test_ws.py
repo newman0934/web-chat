@@ -7,6 +7,14 @@ from app.main import app
 pytestmark = pytest.mark.asyncio
 
 
+def _recv(ws):
+    """收下一個非 presence frame(presence 為好友上/下線廣播,與本檔測試無關)。"""
+    while True:
+        msg = ws.receive_json()
+        if msg.get("type") != "presence":
+            return msg
+
+
 async def _setup(client, register_user, auth_headers):
     alice = await register_user("wsa@example.com", "Alice")
     bob = await register_user("wsb@example.com", "Bob")
@@ -21,7 +29,7 @@ async def test_ws_rejects_invalid_token(session_factory):
     with TestClient(app) as tc:
         with pytest.raises(WebSocketDisconnect):
             with tc.websocket_connect("/ws?token=not-a-jwt") as ws:
-                ws.receive_json()
+                _recv(ws)
 
 
 async def test_ws_message_ack_and_push_and_persist(
@@ -41,13 +49,13 @@ async def test_ws_message_ack_and_push_and_persist(
                     "temp_id": "tmp-1",
                 }
             )
-            ack = ws_alice.receive_json()
+            ack = _recv(ws_alice)
             assert ack["type"] == "ack"
             assert ack["temp_id"] == "tmp-1"
             assert ack["message"]["content"] == "hello bob"
             assert ack["message"]["read_count"] == 0
 
-            pushed = ws_bob.receive_json()
+            pushed = _recv(ws_bob)
             assert pushed["type"] == "message"
             assert pushed["message"]["content"] == "hello bob"
             assert pushed["message"]["read_count"] == 0
@@ -71,7 +79,7 @@ async def test_ws_send_to_foreign_conversation_errors(
                 {"type": "message", "conversation_id": conv_id, "content": "x",
                  "temp_id": "t"}
             )
-            resp = ws.receive_json()
+            resp = _recv(ws)
             assert resp["type"] == "error"
             assert resp["reason"] == "forbidden"
 
@@ -97,9 +105,9 @@ async def test_ws_group_broadcast_to_all_members(client, register_user, auth_hea
              tc.websocket_connect(f"/ws?token={alice}") as wa:
             wa.send_json({"type": "message", "conversation_id": conv_id,
                           "content": "hi all", "temp_id": "t1"})
-            assert wa.receive_json()["type"] == "ack"
-            assert wb.receive_json()["message"]["content"] == "hi all"
-            assert wc.receive_json()["message"]["content"] == "hi all"
+            assert _recv(wa)["type"] == "ack"
+            assert _recv(wb)["message"]["content"] == "hi all"
+            assert _recv(wc)["message"]["content"] == "hi all"
 
 
 async def test_ws_group_read_broadcasts_message_ids(client, register_user, auth_headers):
@@ -119,10 +127,10 @@ async def test_ws_group_read_broadcasts_message_ids(client, register_user, auth_
              tc.websocket_connect(f"/ws?token={bob}") as wb:
             wa.send_json({"type": "message", "conversation_id": conv_id,
                           "content": "ping", "temp_id": "t"})
-            wa.receive_json()  # ack
-            wb.receive_json()  # message push
+            _recv(wa)  # ack
+            _recv(wb)  # message push
             wb.send_json({"type": "read", "conversation_id": conv_id})
-            evt = wa.receive_json()
+            evt = _recv(wa)
             assert evt["type"] == "read"
             assert evt["reader_id"]
             assert len(evt["message_ids"]) == 1

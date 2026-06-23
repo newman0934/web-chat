@@ -9,6 +9,7 @@ from app.db import get_db
 from app.models import Contact, User
 from app.schemas import AddContactRequest, ContactOut
 from app.services.conversations import get_or_create_direct_conversation
+from app.ws.manager import manager
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
@@ -37,6 +38,8 @@ async def list_contacts(
                 email=other.email,
                 display_name=other.display_name,
                 conversation_id=conv.id,
+                online=manager.is_online(other.id),
+                last_seen_at=manager.get_last_seen(other.id),
             )
         )
     await db.commit()

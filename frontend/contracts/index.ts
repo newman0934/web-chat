@@ -34,6 +34,10 @@ export interface Contact {
   email: string;
   display_name: string;
   conversation_id: string;
+  /** 線上狀態(presence)。初始來自 /contacts 快照,之後由 WS `presence` 事件更新。 */
+  online: boolean;
+  /** 最後上線時間(ISO 字串);在線或從未離線過為 null。 */
+  last_seen_at: string | null;
 }
 
 export interface Attachment {
@@ -167,4 +171,5 @@ export type ServerWsMessage =
   | { type: 'call_unavailable'; to_user_id: string }
   | { type: 'conversation_updated'; conversation_id: string }
   | { type: 'conversation_removed'; conversation_id: string }
-  | { type: 'notification'; notification: Notification };
+  | { type: 'notification'; notification: Notification }
+  | { type: 'presence'; user_id: string; online: boolean; last_seen_at: string | null };

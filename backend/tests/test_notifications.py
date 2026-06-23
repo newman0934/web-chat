@@ -16,6 +16,14 @@ from app.models import Message, Notification, User
 from app.services import notifications as svc
 
 
+def _recv(ws):
+    """收下一個非 presence frame(presence 為好友上/下線廣播,與本檔測試無關)。"""
+    while True:
+        msg = ws.receive_json()
+        if msg.get("type") != "presence":
+            return msg
+
+
 async def _user_id(session_factory, email: str) -> uuid.UUID:
     async with session_factory() as db:
         res = await db.execute(select(User).where(User.email == email))
@@ -181,15 +189,15 @@ async def test_ws_reply_creates_notification_and_pushes(
              tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
             ws_bob.send_json({"type": "message", "conversation_id": conv,
                               "content": "Bob 的訊息", "temp_id": "m1"})
-            m_id = ws_bob.receive_json()["message"]["id"]
-            ws_alice.receive_json()  # Alice 收到 Bob 的訊息推播
+            m_id = _recv(ws_bob)["message"]["id"]
+            _recv(ws_alice)  # Alice 收到 Bob 的訊息推播
 
             ws_alice.send_json({"type": "message", "conversation_id": conv,
                                 "content": "回覆你", "reply_to_message_id": m_id,
                                 "temp_id": "m2"})
-            ws_alice.receive_json()  # ack
+            _recv(ws_alice)  # ack
             # Bob 收到:回覆訊息 + 通知(兩個 frame,順序為先 message 後 notification)
-            frames = [ws_bob.receive_json(), ws_bob.receive_json()]
+            frames = [_recv(ws_bob), _recv(ws_bob)]
 
     notif = next(f for f in frames if f["type"] == "notification")
     assert notif["notification"]["type"] == "reply"
@@ -211,10 +219,10 @@ async def test_ws_reaction_notifies_sender_and_toggle_off_keeps(
         with tc.websocket_connect(f"/ws?token={tb}") as ws_bob:
             ws_bob.send_json({"type": "message", "conversation_id": conv,
                               "content": "Bob 訊息", "temp_id": "m1"})
-            m_id = ws_bob.receive_json()["message"]["id"]
+            m_id = _recv(ws_bob)["message"]["id"]
         with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
             ws_alice.send_json({"type": "react", "message_id": m_id, "emoji": "👍"})
-            ws_alice.receive_json()  # message_updated 廣播(含操作者)
+            _recv(ws_alice)  # message_updated 廣播(含操作者)
 
     notifs = await _notifs_for(session_factory, bob_id)
     assert len(notifs) == 1
@@ -225,7 +233,7 @@ async def test_ws_reaction_notifies_sender_and_toggle_off_keeps(
     with TestClient(app) as tc:
         with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
             ws_alice.send_json({"type": "react", "message_id": m_id, "emoji": "👍"})
-            ws_alice.receive_json()
+            _recv(ws_alice)
     assert len(await _notifs_for(session_factory, bob_id)) == 1  # 不新增、不刪
 
 
@@ -245,11 +253,11 @@ async def test_ws_forward_notifies_original_sender(
         with tcx.websocket_connect(f"/ws?token={tb}") as ws_bob:
             ws_bob.send_json({"type": "message", "conversation_id": conv,
                               "content": "Bob 原訊息", "temp_id": "m1"})
-            m_id = ws_bob.receive_json()["message"]["id"]
+            m_id = _recv(ws_bob)["message"]["id"]
         with tcx.websocket_connect(f"/ws?token={ta}") as ws_alice:
             ws_alice.send_json({"type": "forward", "message_id": m_id,
                                 "to_conversation_id": conv_d})
-            ws_alice.receive_json()  # 轉發訊息廣播給 D 成員(含 Alice)
+            _recv(ws_alice)  # 轉發訊息廣播給 D 成員(含 Alice)
 
     notifs = await _notifs_for(session_factory, bob_id)
     assert len(notifs) == 1
@@ -269,9 +277,9 @@ async def test_ws_self_interaction_no_notification(
         with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
             ws_alice.send_json({"type": "message", "conversation_id": conv,
                                 "content": "Alice 自己的訊息", "temp_id": "m1"})
-            m_id = ws_alice.receive_json()["message"]["id"]
+            m_id = _recv(ws_alice)["message"]["id"]
             ws_alice.send_json({"type": "react", "message_id": m_id, "emoji": "👍"})
-            ws_alice.receive_json()
+            _recv(ws_alice)
 
     assert len(await _notifs_for(session_factory, alice_id)) == 0
 
@@ -286,12 +294,12 @@ async def _seed_reply_notif_for_bob(client, register_user, auth_headers):
         with tc.websocket_connect(f"/ws?token={tb}") as ws_bob:
             ws_bob.send_json({"type": "message", "conversation_id": conv,
                               "content": "Bob 訊息", "temp_id": "m1"})
-            m_id = ws_bob.receive_json()["message"]["id"]
+            m_id = _recv(ws_bob)["message"]["id"]
         with tc.websocket_connect(f"/ws?token={ta}") as ws_alice:
             ws_alice.send_json({"type": "message", "conversation_id": conv,
                                 "content": "回覆", "reply_to_message_id": m_id,
                                 "temp_id": "m2"})
-            ws_alice.receive_json()  # ack
+            _recv(ws_alice)  # ack
     return ta, tb, conv
 
 

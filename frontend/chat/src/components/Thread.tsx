@@ -13,6 +13,8 @@ import { EditHistoryPopover } from './EditHistoryPopover';
 
 interface ThreadProps {
   title: string;
+  /** 1對1 對方的 presence 文案（「在線」/「最後上線 X」/「離線」）；群組或無對象時為 null。 */
+  statusText?: string | null;
   isGroup: boolean;
   memberNames: Record<string, string>;
   messages: ChatMessage[];
@@ -36,6 +38,7 @@ interface ThreadProps {
 /** 右側對話視窗：訊息列表、載入更多、輸入框與送出。 */
 export function Thread({
   title,
+  statusText = null,
   isGroup,
   memberNames,
   messages,
@@ -112,7 +115,14 @@ export function Thread({
   return (
     <section className="flex h-full flex-1 flex-col bg-slate-50">
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-        <h2 className="font-semibold text-slate-800">{title}</h2>
+        <div className="min-w-0">
+          <h2 className="font-semibold text-slate-800">{title}</h2>
+          {statusText && (
+            <p data-testid="presence-status" className="text-xs text-slate-400">
+              {statusText}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           {onStartCall && (
             <button

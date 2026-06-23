@@ -4,7 +4,14 @@
 
 import { create } from 'zustand';
 
-import type { Contact, Conversation, Message, Notification, NotificationList } from '../../contracts';
+import type {
+  Contact,
+  Conversation,
+  Message,
+  Notification,
+  NotificationList,
+  ServerWsMessage,
+} from '../../contracts';
 import {
   addIncoming,
   addOptimistic,
@@ -17,6 +24,9 @@ import {
   type ChatMessage,
 } from './messageStore';
 import { applyMarkRead, upsertNotification } from './notifications';
+import { applyPresence, presenceFromContacts, type PresenceMap } from './presence';
+
+type PresenceEvent = Extract<ServerWsMessage, { type: 'presence' }>;
 
 interface ChatState {
   conversations: Conversation[];
@@ -26,10 +36,16 @@ interface ChatState {
   /** conversationId → 是否還有更早的歷史可載入。 */
   hasMore: Record<string, boolean>;
   contacts: Contact[];
+  /** 好友線上狀態:user_id → {online, last_seen_at}。 */
+  presence: PresenceMap;
 
   // ---- 清單 / 選取 ----
   setConversations: (conversations: Conversation[]) => void;
   setContacts: (contacts: Contact[]) => void;
+  /** 由 /contacts 快照建立初始 presence map。 */
+  setPresenceFromContacts: (contacts: Contact[]) => void;
+  /** 套用一筆 WS presence 事件。 */
+  applyPresenceEvent: (evt: PresenceEvent) => void;
   setActiveId: (id: string | null) => void;
   setHasMore: (conversationId: string, hasMore: boolean) => void;
   /** 該對話是否已載過訊息（決定切換時要不要拉歷史）。 */
@@ -75,6 +91,7 @@ const initialState = {
   messages: {} as Record<string, ChatMessage[]>,
   hasMore: {} as Record<string, boolean>,
   contacts: [] as Contact[],
+  presence: {} as PresenceMap,
   notifications: [] as Notification[],
   unreadCount: 0,
 };
@@ -84,6 +101,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setConversations: (conversations) => set({ conversations }),
   setContacts: (contacts) => set({ contacts }),
+  setPresenceFromContacts: (contacts) => set({ presence: presenceFromContacts(contacts) }),
+  applyPresenceEvent: (evt) => set((s) => ({ presence: applyPresence(s.presence, evt) })),
   setActiveId: (id) => set({ activeId: id }),
   setHasMore: (conversationId, hasMore) =>
     set((s) => ({ hasMore: { ...s.hasMore, [conversationId]: hasMore } })),

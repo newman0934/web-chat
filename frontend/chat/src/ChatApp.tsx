@@ -14,6 +14,7 @@ import { Sidebar } from './components/Sidebar';
 import { Thread } from './components/Thread';
 import { useCall } from './useCall';
 import { makeOptimistic } from './messageStore';
+import { formatLastSeen } from './presence';
 import { useChatStore } from './store';
 import { useChatSocket } from './useChatSocket';
 
@@ -38,6 +39,7 @@ export default function ChatApp({
   const messages = useChatStore((s) => s.messages);
   const hasMore = useChatStore((s) => s.hasMore);
   const contacts = useChatStore((s) => s.contacts);
+  const presence = useChatStore((s) => s.presence);
   const notifications = useChatStore((s) => s.notifications);
   const unreadCount = useChatStore((s) => s.unreadCount);
 
@@ -56,7 +58,11 @@ export default function ChatApp({
     void loadConversations();
     void api
       .listContacts()
-      .then((c) => useChatStore.getState().setContacts(c))
+      .then((c) => {
+        const st = useChatStore.getState();
+        st.setContacts(c);
+        st.setPresenceFromContacts(c);
+      })
       .catch(() => {});
     void api
       .listNotifications()
@@ -111,6 +117,9 @@ export default function ChatApp({
           break;
         case 'notification':
           st.addNotification(msg.notification);
+          break;
+        case 'presence':
+          st.applyPresenceEvent(msg);
           break;
         case 'conversation_updated':
           void loadConversations();
@@ -342,6 +351,14 @@ export default function ChatApp({
       ? activeConv.name ?? '群組'
       : activeConv.other_user?.display_name ?? ''
     : '';
+  // 1對1 對方的 presence 文案:在線→「在線」、有 last_seen→「最後上線 X」、否則「離線」。群組為 null。
+  const statusText = (() => {
+    if (!otherUser) return null;
+    const p = presence[otherUser.id];
+    if (p?.online) return '在線';
+    const rel = formatLastSeen(p?.last_seen_at ?? null);
+    return rel ? `最後上線 ${rel}` : '離線';
+  })();
 
   return (
     <div className="flex h-screen">
@@ -355,6 +372,7 @@ export default function ChatApp({
         onAddContact={addContact}
         onCreateGroup={createGroup}
         onLogout={onLogout}
+        presence={presence}
         notificationSlot={
           <NotificationCenter
             notifications={notifications}
@@ -366,6 +384,7 @@ export default function ChatApp({
       {activeId && activeConv ? (
         <Thread
           title={title}
+          statusText={statusText}
           isGroup={isGroup}
           memberNames={memberNames}
           messages={messages[activeId] ?? []}

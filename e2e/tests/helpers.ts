@@ -223,6 +223,22 @@ export async function wsOpenCollector(page: Page, token: string): Promise<void> 
   );
 }
 
+/** 關閉 wsOpenCollector 開的連線（觸發 server 端 disconnect，例如測 presence offline）。 */
+export async function wsCloseCollector(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const ws = (window as any).__ws as WebSocket | undefined;
+    if (ws) ws.close();
+  });
+}
+
+/** 取 collector 目前累積、指定 type 的訊息（不等待；用於負向斷言「沒有」）。 */
+export async function wsCollected(page: Page, type: string): Promise<any[]> {
+  return page.evaluate(
+    (t) => ((window as any).__wsMessages || []).filter((m: any) => m.type === t),
+    type
+  );
+}
+
 /**
  * 等待 collector 收到指定 type 的廣播，回傳所有符合的訊息。
  * 逾時即拋錯（代表該廣播沒送到 → 測試失敗）。
