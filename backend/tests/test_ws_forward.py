@@ -32,7 +32,7 @@ def _recv(ws):
 
 
 # ---------------------------------------------------------------------------
-# Shared helpers
+# 共用 helper
 # ---------------------------------------------------------------------------
 
 async def _setup_pair(client, register_user, auth_headers, email_a="fa@example.com",
@@ -82,7 +82,7 @@ async def _insert_attachment(session_factory, message_id: str, uploader_id: str,
 
 
 # ---------------------------------------------------------------------------
-# Test 1: Forward text message → new message, forwarded_from, broadcast to both
+# 測試 1:轉發文字訊息 → 產生新訊息、帶 forwarded_from、廣播給雙方
 # ---------------------------------------------------------------------------
 
 async def test_forward_text_broadcasts_to_target_members(
@@ -91,19 +91,19 @@ async def test_forward_text_broadcasts_to_target_members(
     """Forward a text message: target conversation gets a new message with
     forwarded_from = original author; both forwarder AND another target member
     receive the broadcast."""
-    # Alice ↔ Bob (source conversation)
+    # Alice ↔ Bob(來源對話)
     alice, bob, src_conv_id, alice_id, bob_id = await _setup_pair(
         client, register_user, auth_headers,
         "fwd1a@example.com", "fwd1b@example.com", "Alice", "Bob",
     )
-    # Carol ↔ Bob (target conversation — Bob will forward to Carol)
+    # Carol ↔ Bob(目標對話 —— Bob 會轉發給 Carol)
     carol = await register_user("fwd1c@example.com", "Carol")
     await client.post("/contacts", json={"email": "fwd1b@example.com"}, headers=auth_headers(carol))
     target_convs = (await client.get("/conversations", headers=auth_headers(bob))).json()
     target_conv_id = next(c["id"] for c in target_convs if c["id"] != src_conv_id)
     carol_id = (await client.get("/users/me", headers=auth_headers(carol))).json()["id"]
 
-    # Alice posts the original message in src_conv
+    # Alice 在 src_conv 貼出原始訊息
     orig_id = await _insert_message(session_factory, src_conv_id, alice_id, content="hello world")
 
     with TestClient(app) as tc:
@@ -111,14 +111,14 @@ async def test_forward_text_broadcasts_to_target_members(
             tc.websocket_connect(f"/ws?token={bob}") as wb,
             tc.websocket_connect(f"/ws?token={carol}") as wc,
         ):
-            # Bob forwards Alice's message to the Bob↔Carol conversation
+            # Bob 把 Alice 的訊息轉發到 Bob↔Carol 對話
             wb.send_json({
                 "type": "forward",
                 "message_id": orig_id,
                 "to_conversation_id": target_conv_id,
             })
 
-            # Both Bob (forwarder) and Carol (target member) should receive the broadcast
+            # Bob(轉發者)與 Carol(目標成員)都應收到廣播
             evt_b = _recv(wb)
             evt_c = _recv(wc)
 
@@ -127,18 +127,18 @@ async def test_forward_text_broadcasts_to_target_members(
         msg = evt["message"]
         assert msg["conversation_id"] == target_conv_id
         assert msg["content"] == "hello world"
-        # forwarded_from should point to Alice (original sender)
+        # forwarded_from 應指向 Alice(原寄件人)
         assert msg["forwarded_from"] is not None
         assert msg["forwarded_from"]["id"] == alice_id
         assert msg["forwarded_from"]["display_name"] == "Alice"
-        # sender of the new message is Bob
+        # 新訊息的寄件人是 Bob
         assert msg["sender_id"] == bob_id
-        # no reply_to inherited
+        # 不繼承 reply_to
         assert msg["reply_to"] is None
 
 
 # ---------------------------------------------------------------------------
-# Test 2: Forward message with attachment → new Attachment row, same stored_name
+# 測試 2:轉發含附件訊息 → 產生新 Attachment 列、共用 stored_name
 # ---------------------------------------------------------------------------
 
 async def test_forward_with_attachment_copies_attachment_row(
@@ -156,7 +156,7 @@ async def test_forward_with_attachment_copies_attachment_row(
     target_convs = (await client.get("/conversations", headers=auth_headers(bob))).json()
     target_conv_id = next(c["id"] for c in target_convs if c["id"] != src_conv_id)
 
-    # Insert original message with an attachment
+    # 插入帶附件的原始訊息
     orig_id = await _insert_message(session_factory, src_conv_id, alice_id, content="with file")
     stored_name = "shared-disk-file.png"
     await _insert_attachment(session_factory, orig_id, alice_id, stored_name=stored_name)
@@ -174,12 +174,12 @@ async def test_forward_with_attachment_copies_attachment_row(
     msg = evt["message"]
     new_msg_id = uuid.UUID(msg["id"])
 
-    # Verify attachment in serialized payload (stored_name is not exposed; check is_image)
+    # 驗證序列化 payload 內的 attachment(不外露 stored_name;改驗 is_image)
     assert msg["attachment"] is not None
     assert msg["attachment"]["is_image"] is True
     assert msg["attachment"]["original_name"] == "photo.png"
 
-    # Verify a NEW Attachment row in DB bound to the new message
+    # 驗證 DB 有一列新的 Attachment 綁到新訊息
     async with session_factory() as s:
         result = await s.execute(
             select(Attachment).where(Attachment.message_id == new_msg_id)
@@ -189,7 +189,7 @@ async def test_forward_with_attachment_copies_attachment_row(
     assert new_att.stored_name == stored_name
     assert new_att.original_name == "photo.png"
     assert new_att.is_image is True
-    # It should NOT be the same row as the original attachment
+    # 不應與原附件是同一列
     orig_att_result = None
     async with session_factory() as s:
         result = await s.execute(
@@ -201,7 +201,7 @@ async def test_forward_with_attachment_copies_attachment_row(
 
 
 # ---------------------------------------------------------------------------
-# Test 3: Forward to a conversation the user is NOT a member of → forbidden
+# 測試 3:轉發到使用者「非成員」的對話 → forbidden
 # ---------------------------------------------------------------------------
 
 async def test_forward_to_non_member_conversation_forbidden(
@@ -212,7 +212,7 @@ async def test_forward_to_non_member_conversation_forbidden(
         client, register_user, auth_headers,
         "fwd3a@example.com", "fwd3b@example.com", "Alice", "Bob",
     )
-    # Carol ↔ Alice (Bob is NOT in this conversation)
+    # Carol ↔ Alice(Bob 不在此對話)
     carol = await register_user("fwd3c@example.com", "Carol")
     await client.post("/contacts", json={"email": "fwd3c@example.com"}, headers=auth_headers(alice))
     alice_convs = (await client.get("/conversations", headers=auth_headers(alice))).json()
@@ -234,14 +234,14 @@ async def test_forward_to_non_member_conversation_forbidden(
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Forward a message user CANNOT see (not in source conversation) → forbidden
+# 測試 4:轉發使用者「看不到」的訊息(不在來源對話)→ forbidden
 # ---------------------------------------------------------------------------
 
 async def test_forward_message_in_unseen_conversation_forbidden(
     client, register_user, auth_headers, session_factory
 ):
     """Bob cannot forward a message from a conversation he's not a member of."""
-    # Alice ↔ Carol (Bob is NOT in this conversation)
+    # Alice ↔ Carol(Bob 不在此對話)
     alice = await register_user("fwd4a@example.com", "Alice")
     carol = await register_user("fwd4c@example.com", "Carol")
     await client.post("/contacts", json={"email": "fwd4c@example.com"}, headers=auth_headers(alice))
@@ -249,13 +249,13 @@ async def test_forward_message_in_unseen_conversation_forbidden(
     alice_convs = (await client.get("/conversations", headers=auth_headers(alice))).json()
     alice_carol_conv_id = alice_convs[0]["id"]
 
-    # Bob ↔ Alice (Bob's own conversation, needed so Bob has somewhere to forward to)
+    # Bob ↔ Alice(Bob 自己的對話,讓 Bob 有可轉發的去處)
     bob = await register_user("fwd4b@example.com", "Bob")
     await client.post("/contacts", json={"email": "fwd4b@example.com"}, headers=auth_headers(alice))
     bob_convs = (await client.get("/conversations", headers=auth_headers(bob))).json()
     bob_alice_conv_id = bob_convs[0]["id"]
 
-    # Insert a message in the Alice↔Carol conversation (Bob can't see it)
+    # 在 Alice↔Carol 對話插入一則訊息(Bob 看不到)
     secret_msg_id = await _insert_message(
         session_factory, alice_carol_conv_id, alice_id, content="private"
     )
@@ -274,7 +274,7 @@ async def test_forward_message_in_unseen_conversation_forbidden(
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Forward a soft-deleted message → forbidden
+# 測試 5:轉發已軟刪的訊息 → forbidden
 # ---------------------------------------------------------------------------
 
 async def test_forward_deleted_message_forbidden(
@@ -290,7 +290,7 @@ async def test_forward_deleted_message_forbidden(
     carol_convs = (await client.get("/conversations", headers=auth_headers(carol))).json()
     target_conv_id = carol_convs[0]["id"]
 
-    # Insert a soft-deleted message
+    # 插入一則已軟刪的訊息
     del_id = await _insert_message(
         session_factory, src_conv_id, alice_id, content="deleted", deleted=True
     )
@@ -309,7 +309,7 @@ async def test_forward_deleted_message_forbidden(
 
 
 # ---------------------------------------------------------------------------
-# Test 6: Missing to_conversation_id → invalid_payload
+# 測試 6:缺 to_conversation_id → invalid_payload
 # ---------------------------------------------------------------------------
 
 async def test_forward_missing_to_conversation_id_invalid_payload(
@@ -324,11 +324,11 @@ async def test_forward_missing_to_conversation_id_invalid_payload(
 
     with TestClient(app) as tc:
         with tc.websocket_connect(f"/ws?token={bob}") as wb:
-            # Missing to_conversation_id
+            # 缺 to_conversation_id
             wb.send_json({
                 "type": "forward",
                 "message_id": orig_id,
-                # to_conversation_id intentionally omitted
+                # 故意省略 to_conversation_id
             })
             err = _recv(wb)
 
@@ -337,7 +337,7 @@ async def test_forward_missing_to_conversation_id_invalid_payload(
 
 
 # ---------------------------------------------------------------------------
-# Test 7: Malformed message_id UUID → invalid_payload
+# 測試 7:message_id UUID 格式錯誤 → invalid_payload
 # ---------------------------------------------------------------------------
 
 async def test_forward_malformed_message_id_invalid_payload(

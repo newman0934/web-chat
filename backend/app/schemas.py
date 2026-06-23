@@ -25,7 +25,7 @@ def _utc_iso(dt: datetime | None) -> str | None:
     return dt.isoformat()
 
 
-# ---- auth / user ----
+# ---- 認證 / 使用者 ----
 class RegisterRequest(BaseModel):
     email: EmailStr  # EmailStr 會驗證格式
     display_name: str = Field(min_length=1, max_length=100)
@@ -81,7 +81,7 @@ class AttachmentOut(BaseModel):
     is_image: bool
 
 
-# ---- conversations / messages ----
+# ---- 對話 / 訊息 ----
 class ReactionGroupOut(BaseModel):
     emoji: str
     count: int

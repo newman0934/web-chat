@@ -88,19 +88,19 @@ async def test_react_on_deleted_message_forbidden(client, register_user, auth_he
     """React on a deleted message must return forbidden, even with a valid emoji."""
     alice, bob, conv_id, mid = await _pair_with_message(client, register_user, auth_headers, session_factory)
     with TestClient(app) as tc:
-        # Step 1: alice deletes her message; bob's socket is open so it also receives the broadcast.
+        # 步驟 1:alice 刪除自己的訊息;bob 的 socket 開著,故也會收到廣播。
         with tc.websocket_connect(f"/ws?token={alice}") as wa, \
              tc.websocket_connect(f"/ws?token={bob}") as wb:
             wa.send_json({"type": "delete", "message_id": mid})
-            # alice receives message_updated (broadcast to actor)
+            # alice 收到 message_updated(廣播含操作者)
             delete_evt_a = _recv(wa)
             assert delete_evt_a["type"] == "message_updated"
             assert delete_evt_a["message"]["deleted"] is True
-            # bob also receives the delete broadcast — drain it before we react
+            # bob 也會收到刪除廣播 —— 先排掉再進行 react
             delete_evt_b = _recv(wb)
             assert delete_evt_b["type"] == "message_updated"
 
-            # Step 2: bob tries to react on the now-deleted message
+            # 步驟 2:bob 試圖對已刪除的訊息按表情
             wb.send_json({"type": "react", "message_id": mid, "emoji": "👍"})
             err = _recv(wb)
             assert err["type"] == "error"
@@ -112,13 +112,13 @@ async def test_edit_deleted_message_forbidden(client, register_user, auth_header
     alice, bob, conv_id, mid = await _pair_with_message(client, register_user, auth_headers, session_factory)
     with TestClient(app) as tc:
         with tc.websocket_connect(f"/ws?token={alice}") as wa:
-            # alice deletes her message
+            # alice 刪除自己的訊息
             wa.send_json({"type": "delete", "message_id": mid})
             delete_evt = _recv(wa)
             assert delete_evt["type"] == "message_updated"
             assert delete_evt["message"]["deleted"] is True
 
-            # alice tries to edit the already-deleted message
+            # alice 試圖編輯已刪除的訊息
             wa.send_json({"type": "edit", "message_id": mid, "content": "x"})
             err = _recv(wa)
             assert err["type"] == "error"

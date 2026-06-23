@@ -78,7 +78,7 @@ async def test_notification_model_roundtrip(session_factory):
     assert n.created_at is not None
 
 
-# ── Task 2: service ──────────────────────────────────────────────────────────
+# ── Task 2:服務層 ──────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -284,7 +284,7 @@ async def test_ws_self_interaction_no_notification(
     assert len(await _notifs_for(session_factory, alice_id)) == 0
 
 
-# ── Task 4: REST ─────────────────────────────────────────────────────────────
+# ── Task 4:REST 端點 ─────────────────────────────────────────────────────────────
 
 
 async def _seed_reply_notif_for_bob(client, register_user, auth_headers):

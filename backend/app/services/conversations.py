@@ -265,8 +265,8 @@ async def serialize_message_out(
     deleted = m.deleted_at is not None
     att = None if deleted else await get_attachment_for_message(db, m.id)
     groups = [] if deleted else await get_reaction_groups(db, m.id)
-    # reply_to / forwarded_from: helpers return dicts with native uuid.UUID;
-    # Pydantic accepts uuid.UUID for uuid fields directly.
+    # reply_to / forwarded_from:helper 回傳的 dict 內 uuid 欄位保留原生 uuid.UUID;
+    # Pydantic 可直接用 uuid.UUID 填入 uuid 欄位。
     reply_to_d = await build_reply_preview(db, m)
     forwarded_from_d = await build_forwarded_from(db, m)
     rc = read_count_value if read_count_value is not None else await read_count(db, m.id)

@@ -60,7 +60,7 @@ export function Thread({
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  // Map from message id to DOM element ref, used for scroll-to-original.
+  // message id → DOM 元素 ref 對照,用於捲動到原訊息。
   const bubbleRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // 新訊息加入時自動捲到底部。

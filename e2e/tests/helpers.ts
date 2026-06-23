@@ -9,7 +9,7 @@ import { APIRequestContext, Page } from "@playwright/test";
 
 const API = "http://localhost:8000";
 
-// ── REST helpers ──────────────────────────────────────────────────────────────
+// ── REST 輔助函式 ──────────────────────────────────────────────────────────────
 
 /** 建立測試用帳號，回傳 JWT token。若 email 已存在（409）則改用 login。 */
 export async function apiRegister(
@@ -123,7 +123,7 @@ export async function apiGetMessages(
   return res.json();
 }
 
-// ── WebSocket helper ──────────────────────────────────────────────────────────
+// ── WebSocket 輔助函式 ──────────────────────────────────────────────────────────
 
 /**
  * 在瀏覽器內建立 WebSocket 連線，送出訊息並等待指定類型的回應。
@@ -287,7 +287,7 @@ export async function wsSendRaw(
   );
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
+// ── UI 輔助函式 ────────────────────────────────────────────────────────────────
 
 /**
  * 透過 shell UI 完成登入流程。

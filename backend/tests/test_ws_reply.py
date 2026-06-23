@@ -44,7 +44,7 @@ async def _insert_message(session_factory, conv_id: str, sender_id: str, content
 
 
 # ---------------------------------------------------------------------------
-# Test 1: Reply to a message in the SAME conversation — ack/broadcast correct
+# 測試 1:回覆「同一對話」內的訊息 —— ack/broadcast 正確
 # ---------------------------------------------------------------------------
 
 async def test_reply_same_conversation(client, register_user, auth_headers, session_factory):
@@ -56,7 +56,7 @@ async def test_reply_same_conversation(client, register_user, auth_headers, sess
     alice, bob, conv_id, alice_id = await _setup_pair(
         client, register_user, auth_headers, session_factory
     )
-    # Alice sends a message that Bob will later reply to.
+    # Alice 送出一則訊息,稍後 Bob 會回覆它。
     orig_id = await _insert_message(session_factory, conv_id, alice_id, content="original msg")
 
     with TestClient(app) as tc:
@@ -64,7 +64,7 @@ async def test_reply_same_conversation(client, register_user, auth_headers, sess
             tc.websocket_connect(f"/ws?token={alice}") as wa,
             tc.websocket_connect(f"/ws?token={bob}") as wb,
         ):
-            # Bob replies to Alice's message.
+            # Bob 回覆 Alice 的訊息。
             wb.send_json({
                 "type": "message",
                 "conversation_id": conv_id,
@@ -93,7 +93,7 @@ async def test_reply_same_conversation(client, register_user, auth_headers, sess
 
 
 # ---------------------------------------------------------------------------
-# Test 2: reply_to_message_id from a DIFFERENT conversation → invalid_reply
+# 測試 2:reply_to_message_id 來自「不同對話」→ invalid_reply
 # ---------------------------------------------------------------------------
 
 async def test_reply_cross_conversation_rejected(client, register_user, auth_headers, session_factory):
@@ -104,16 +104,16 @@ async def test_reply_cross_conversation_rejected(client, register_user, auth_hea
         client, register_user, auth_headers, session_factory
     )
 
-    # Carol is a third user; she has a separate conversation with Alice.
+    # Carol 是第三位使用者;她與 Alice 另有一個對話。
     carol = await register_user("rpc@example.com", "Carol")
     await client.post("/contacts", json={"email": "rpc@example.com"}, headers=auth_headers(alice))
     other_convs = (await client.get("/conversations", headers=auth_headers(alice))).json()
     other_conv_id = next(c["id"] for c in other_convs if c["id"] != conv_id)
 
-    # Insert a message in the OTHER conversation (Alice ↔ Carol).
+    # 在「另一個」對話(Alice ↔ Carol)插入一則訊息。
     other_msg_id = await _insert_message(session_factory, other_conv_id, alice_id, content="in other conv")
 
-    # Count messages in alice↔bob conversation before the attempt.
+    # 嘗試前先數 alice↔bob 對話的訊息數。
     async with session_factory() as s:
         result = await s.execute(
             select(Message).where(Message.conversation_id == uuid.UUID(conv_id))
@@ -135,7 +135,7 @@ async def test_reply_cross_conversation_rejected(client, register_user, auth_hea
     assert err["reason"] == "invalid_reply"
     assert err.get("temp_id") == "t-cross"
 
-    # Verify no new message was persisted.
+    # 驗證沒有新訊息被寫入。
     async with session_factory() as s:
         result = await s.execute(
             select(Message).where(Message.conversation_id == uuid.UUID(conv_id))
@@ -145,7 +145,7 @@ async def test_reply_cross_conversation_rejected(client, register_user, auth_hea
 
 
 # ---------------------------------------------------------------------------
-# Test 3: Reply to a soft-deleted message → invalid_reply
+# 測試 3:回覆已軟刪的訊息 → invalid_reply
 # ---------------------------------------------------------------------------
 
 async def test_reply_to_soft_deleted_message_rejected(client, register_user, auth_headers, session_factory):
@@ -155,7 +155,7 @@ async def test_reply_to_soft_deleted_message_rejected(client, register_user, aut
     )
     orig_id = await _insert_message(session_factory, conv_id, alice_id, content="will be deleted")
 
-    # Soft-delete the original message directly in DB.
+    # 直接在 DB 把原訊息軟刪。
     async with session_factory() as s:
         m = await s.get(Message, uuid.UUID(orig_id))
         m.deleted_at = datetime.now(timezone.utc)
@@ -178,7 +178,7 @@ async def test_reply_to_soft_deleted_message_rejected(client, register_user, aut
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Malformed reply_to_message_id (not a UUID) → invalid_payload
+# 測試 4:reply_to_message_id 格式錯誤(非 UUID)→ invalid_payload
 # ---------------------------------------------------------------------------
 
 async def test_reply_malformed_uuid_invalid_payload(client, register_user, auth_headers, session_factory):

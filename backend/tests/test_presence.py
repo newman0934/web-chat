@@ -1,7 +1,7 @@
 """線上狀態(presence)測試。
 
 Task 1：User.last_seen_at 欄位(schema 由 conftest 的 create_all 建立)。
-Task 2：ConnectionManager first/last 旗標、presence service 純後端邏輯。
+Task 2：ConnectionManager 首尾旗標、presence 服務(純後端邏輯)。
 後續 task 會補 WS 廣播、/contacts 帶 presence。
 """
 
@@ -50,7 +50,7 @@ async def test_user_last_seen_defaults_null(session_factory):
         assert u.last_seen_at is None
 
 
-# --- Task 2：ConnectionManager first/last ---
+# --- Task 2:ConnectionManager 首尾旗標 ---
 
 
 @pytest.mark.asyncio
@@ -79,7 +79,7 @@ def test_disconnect_unknown_returns_false():
     assert mgr.disconnect(uuid.uuid4(), FakeWebSocket()) is False
 
 
-# --- Task 2：presence service ---
+# --- Task 2:presence 服務 ---
 
 
 @pytest.mark.asyncio

@@ -103,12 +103,12 @@ async def test_restore_non_deleted_forbidden(client, register_user, auth_headers
 
 async def test_conversation_list_masks_deleted_last_message(client, register_user, auth_headers, session_factory):
     alice, bob, conv_id, mid = await _pair_with_message(client, register_user, auth_headers, session_factory)
-    # alice deletes her (only / last) message via WS
+    # alice 透過 WS 刪除她(唯一/最後)的訊息
     with TestClient(app) as tc:
         with tc.websocket_connect(f"/ws?token={alice}") as wa:
             wa.send_json({"type": "delete", "message_id": mid})
             _recv(wa)
-    # GET /conversations must NOT expose the original content in last_message
+    # GET /conversations 不可在 last_message 外露原始內容
     convs = (await client.get("/conversations", headers=auth_headers(alice))).json()
     target = next(c for c in convs if c["id"] == conv_id)
     assert target["last_message"]["deleted"] is True

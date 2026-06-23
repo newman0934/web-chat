@@ -34,7 +34,7 @@ async def test_message_edit_round_trips(session_factory):
         assert got.message_id == msg.id
 
 
-# Separate sync test function (not under pytestmark)
+# 獨立的同步測試函式(不套用 module 級 pytestmark)
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 

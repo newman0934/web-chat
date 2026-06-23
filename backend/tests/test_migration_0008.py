@@ -24,14 +24,14 @@ async def test_reply_forward_columns_model(session_factory):
             ConversationMember(conversation_id=conv.id, user_id=u1.id),
             ConversationMember(conversation_id=conv.id, user_id=u2.id),
         ])
-        # Create a message to reply to
+        # 建立一則供回覆的訊息
         original_msg = Message(
             conversation_id=conv.id, sender_id=u1.id, content="original"
         )
         s.add(original_msg)
         await s.flush()
 
-        # Create a reply message
+        # 建立一則回覆訊息
         reply_msg = Message(
             conversation_id=conv.id,
             sender_id=u2.id,
@@ -42,7 +42,7 @@ async def test_reply_forward_columns_model(session_factory):
         s.add(reply_msg)
         await s.flush()
 
-        # Create a forwarded message
+        # 建立一則轉發訊息
         forward_msg = Message(
             conversation_id=conv.id,
             sender_id=u1.id,
@@ -53,7 +53,7 @@ async def test_reply_forward_columns_model(session_factory):
         s.add(forward_msg)
         await s.commit()
 
-        # Verify the columns were written and can be read
+        # 驗證欄位確實寫入且可讀回
         got_reply = await s.get(Message, reply_msg.id)
         assert got_reply is not None
         assert got_reply.reply_to_message_id == original_msg.id
@@ -65,7 +65,7 @@ async def test_reply_forward_columns_model(session_factory):
         assert got_forward.forwarded_from_user_id == u2.id
 
 
-# Separate sync test function (not under pytestmark)
+# 獨立的同步測試函式(不套用 module 級 pytestmark)
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -81,10 +81,10 @@ def test_migration_0008_creates_columns(tmp_path):
     assert result.returncode == 0, result.stderr
     con = sqlite3.connect(db)
 
-    # Get columns info from messages table
+    # 從 messages 表取得欄位資訊
     columns = {r[1]: (r[2], r[3], r[5]) for r in con.execute("PRAGMA table_info(messages)")}
     con.close()
 
-    # Assert both columns exist
+    # 斷言兩個欄位都存在
     assert "reply_to_message_id" in columns, f"reply_to_message_id not found in columns: {columns.keys()}"
     assert "forwarded_from_user_id" in columns, f"forwarded_from_user_id not found in columns: {columns.keys()}"

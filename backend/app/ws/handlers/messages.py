@@ -62,7 +62,7 @@ async def handle_send(websocket: WebSocket, user: User, data: dict) -> None:
         )
         return
 
-    # Validate reply_to_message_id if provided (before opening the DB session).
+    # 若帶了 reply_to_message_id,先在開 DB session 前驗證。
     reply_id: uuid.UUID | None = None
     if reply_to_message_id_raw is not None:
         try:
@@ -81,8 +81,8 @@ async def handle_send(websocket: WebSocket, user: User, data: dict) -> None:
             )
             return
 
-        # Validate that the quoted message exists, belongs to this conversation,
-        # and has not been soft-deleted.
+        # 驗證被引用的原訊息存在、屬於此對話、
+        # 且尚未被軟刪。
         reply_msg: Message | None = None
         if reply_id is not None:
             reply_msg = await db.get(Message, reply_id)
