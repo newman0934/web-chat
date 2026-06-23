@@ -11,67 +11,21 @@ from app.auth.deps import get_current_user
 from app.db import get_db
 from app.models import Contact, Conversation, ConversationMember, Message, User
 from app.timeutils import coerce_cursor, to_utc_iso
-from app.schemas import AddMemberRequest, AttachmentOut, ConversationOut, ForwardedFromOut, GroupCreateRequest, GroupRenameRequest, MessageOut, ReplyPreviewOut, RoleUpdateRequest, UserOut
+from app.schemas import AddMemberRequest, ConversationOut, GroupCreateRequest, GroupRenameRequest, MessageOut, RoleUpdateRequest
 from app.services.conversations import (
-    build_forwarded_from,
-    build_reply_preview,
     create_group_conversation,
     create_system_message,
-    get_attachment_for_message,
     get_conversation_for_member,
     get_member,
     get_member_ids,
-    get_reaction_groups,
-    get_role_map,
     is_group_admin,
-    read_count,
-    unread_count,
+    serialize_conversation_out,
+    serialize_message_out,
     would_leave_groupless_of_admin,
 )
 from app.ws.manager import manager
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
-
-
-async def _build_conversation_out(
-    db: AsyncSession, conv: Conversation, me: User
-) -> ConversationOut:
-    member_ids = await get_member_ids(db, conv.id)
-    members = [await db.get(User, uid) for uid in member_ids]
-    other = None
-    if conv.type == "direct":
-        other = next((u for u in members if u.id != me.id), None)
-
-    last_res = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conv.id)
-        .order_by(Message.created_at.desc())
-        .limit(1)
-    )
-    last = last_res.scalar_one_or_none()
-    last_out = None
-    if last is not None:
-        is_last_deleted = last.deleted_at is not None
-        last_out = MessageOut(
-            id=last.id, conversation_id=last.conversation_id, sender_id=last.sender_id,
-            content="" if is_last_deleted else last.content, created_at=last.created_at,
-            read_count=await read_count(db, last.id),
-            deleted=is_last_deleted,
-            deleted_at=last.deleted_at,
-            kind=last.kind,
-        )
-
-    roles = await get_role_map(db, conv.id)
-    return ConversationOut(
-        id=conv.id,
-        type=conv.type,
-        name=conv.name,
-        other_user=UserOut.model_validate(other) if other else None,
-        members=[UserOut.model_validate(u) for u in members],
-        last_message=last_out,
-        unread_count=await unread_count(db, conv.id, me.id),
-        roles=roles,
-    )
 
 
 @router.get("", response_model=list[ConversationOut])
@@ -85,7 +39,7 @@ async def list_conversations(
         .where(ConversationMember.user_id == current_user.id)
     )
     conversations = rows.scalars().all()
-    out = [await _build_conversation_out(db, c, current_user) for c in conversations]
+    out = [await serialize_conversation_out(db, c, current_user) for c in conversations]
     # 排序 key 一律正規化成 tz-aware（UTC）：Postgres 的 TIMESTAMPTZ 回 aware、SQLite 回 naive，
     # 兩者混排會 TypeError（can't compare offset-naive and offset-aware）。無訊息對話墊最小時間。
     def _sort_key(c) -> datetime:
@@ -116,7 +70,7 @@ async def create_group(
     conv = await create_group_conversation(db, current_user.id, payload.name, member_ids)
     await db.commit()
     await db.refresh(conv)
-    return await _build_conversation_out(db, conv, current_user)
+    return await serialize_conversation_out(db, conv, current_user)
 
 
 @router.get("/{conversation_id}/messages", response_model=list[MessageOut])
@@ -139,31 +93,7 @@ async def list_messages(
     result = await db.execute(stmt)
     messages = list(result.scalars().all())
     messages.reverse()
-    out = []
-    for m in messages:
-        deleted = m.deleted_at is not None
-        att = None if deleted else await get_attachment_for_message(db, m.id)
-        groups = [] if deleted else await get_reaction_groups(db, m.id)
-        # reply_to / forwarded_from: helpers return dicts with native uuid.UUID;
-        # Pydantic accepts uuid.UUID for uuid fields directly.
-        reply_to_d = await build_reply_preview(db, m)
-        forwarded_from_d = await build_forwarded_from(db, m)
-        out.append(
-            MessageOut(
-                id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
-                content="" if deleted else m.content, created_at=m.created_at,
-                read_count=await read_count(db, m.id),
-                attachment=AttachmentOut.model_validate(att) if att else None,
-                edited_at=m.edited_at,
-                deleted=deleted,
-                deleted_at=m.deleted_at,
-                reactions=groups,
-                kind=m.kind,
-                reply_to=ReplyPreviewOut(**reply_to_d) if reply_to_d else None,
-                forwarded_from=ForwardedFromOut(**forwarded_from_d) if forwarded_from_d else None,
-            )
-        )
-    return out
+    return [await serialize_message_out(db, m) for m in messages]
 
 
 def _system_message_payload(msg: Message) -> dict:
@@ -246,7 +176,7 @@ async def add_member(
     member_ids = await get_member_ids(db, conversation_id)
     await _push_system_and_updated(member_ids, conversation_id, _system_message_payload(sys))
     await db.refresh(conv)
-    return await _build_conversation_out(db, conv, current_user)
+    return await serialize_conversation_out(db, conv, current_user)
 
 
 @router.delete("/{conversation_id}/members/{user_id}", response_model=ConversationOut)
@@ -279,7 +209,7 @@ async def remove_member(
     await _push_system_and_updated(remaining, conversation_id, _system_message_payload(sys))
     await _push_removed([user_id], conversation_id)
     await db.refresh(conv)
-    return await _build_conversation_out(db, conv, current_user)
+    return await serialize_conversation_out(db, conv, current_user)
 
 
 @router.post("/{conversation_id}/leave")
@@ -338,7 +268,7 @@ async def rename_group(
 
     member_ids = await get_member_ids(db, conversation_id)
     await _push_system_and_updated(member_ids, conversation_id, _system_message_payload(sys))
-    return await _build_conversation_out(db, conv, current_user)
+    return await serialize_conversation_out(db, conv, current_user)
 
 
 @router.patch("/{conversation_id}/members/{user_id}/role", response_model=ConversationOut)
@@ -355,7 +285,7 @@ async def set_member_role(
         raise HTTPException(status_code=404, detail="此人不是群組成員")
     if target_member.role == payload.role:
         # no-op：不寫系統訊息，直接回現況
-        return await _build_conversation_out(db, conv, current_user)
+        return await serialize_conversation_out(db, conv, current_user)
     if payload.role == "member" and await would_leave_groupless_of_admin(
         db, conversation_id, user_id, new_role="member"
     ):
@@ -375,4 +305,4 @@ async def set_member_role(
     member_ids = await get_member_ids(db, conversation_id)
     await _push_system_and_updated(member_ids, conversation_id, _system_message_payload(sys))
     await db.refresh(conv)
-    return await _build_conversation_out(db, conv, current_user)
+    return await serialize_conversation_out(db, conv, current_user)

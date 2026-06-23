@@ -252,6 +252,77 @@ async def build_forwarded_from(db: AsyncSession, message: Message) -> dict | Non
     }
 
 
+async def serialize_message_out(db: AsyncSession, m: Message):
+    """把一則 Message 組成 REST 的 MessageOut（含附件、表情、回覆/轉發預覽）。"""
+    from app.schemas import AttachmentOut, ForwardedFromOut, MessageOut, ReplyPreviewOut
+
+    deleted = m.deleted_at is not None
+    att = None if deleted else await get_attachment_for_message(db, m.id)
+    groups = [] if deleted else await get_reaction_groups(db, m.id)
+    # reply_to / forwarded_from: helpers return dicts with native uuid.UUID;
+    # Pydantic accepts uuid.UUID for uuid fields directly.
+    reply_to_d = await build_reply_preview(db, m)
+    forwarded_from_d = await build_forwarded_from(db, m)
+    return MessageOut(
+        id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
+        content="" if deleted else m.content, created_at=m.created_at,
+        read_count=await read_count(db, m.id),
+        attachment=AttachmentOut.model_validate(att) if att else None,
+        edited_at=m.edited_at,
+        deleted=deleted,
+        deleted_at=m.deleted_at,
+        reactions=groups,
+        kind=m.kind,
+        reply_to=ReplyPreviewOut(**reply_to_d) if reply_to_d else None,
+        forwarded_from=ForwardedFromOut(**forwarded_from_d) if forwarded_from_d else None,
+    )
+
+
+async def serialize_conversation_out(db: AsyncSession, conv: Conversation, me: User):
+    """把一個 Conversation 組成 REST 的 ConversationOut（成員、對方、最後訊息、未讀數、角色）。"""
+    from app.schemas import ConversationOut, MessageOut, UserOut
+
+    member_ids = await get_member_ids(db, conv.id)
+    # 一次撈齊成員（取代逐一 db.get 的 N+1），再依 member_ids 原順序還原。
+    rows = await db.execute(select(User).where(User.id.in_(member_ids)))
+    by_id = {u.id: u for u in rows.scalars().all()}
+    members = [by_id[uid] for uid in member_ids if uid in by_id]
+    other = None
+    if conv.type == "direct":
+        other = next((u for u in members if u.id != me.id), None)
+
+    last_res = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conv.id)
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    last = last_res.scalar_one_or_none()
+    last_out = None
+    if last is not None:
+        is_last_deleted = last.deleted_at is not None
+        last_out = MessageOut(
+            id=last.id, conversation_id=last.conversation_id, sender_id=last.sender_id,
+            content="" if is_last_deleted else last.content, created_at=last.created_at,
+            read_count=await read_count(db, last.id),
+            deleted=is_last_deleted,
+            deleted_at=last.deleted_at,
+            kind=last.kind,
+        )
+
+    roles = await get_role_map(db, conv.id)
+    return ConversationOut(
+        id=conv.id,
+        type=conv.type,
+        name=conv.name,
+        other_user=UserOut.model_validate(other) if other else None,
+        members=[UserOut.model_validate(u) for u in members],
+        last_message=last_out,
+        unread_count=await unread_count(db, conv.id, me.id),
+        roles=roles,
+    )
+
+
 async def would_leave_groupless_of_admin(
     db: AsyncSession,
     conversation_id: uuid.UUID,
