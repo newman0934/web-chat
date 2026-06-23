@@ -55,13 +55,36 @@ beforeEach(() => {
 describe('useChatStore', () => {
   it('reset 清空所有狀態', () => {
     const s = useChatStore.getState();
-    s.setContacts([{ user_id: 'u', email: 'e', display_name: 'd', conversation_id: 'c' }]);
+    s.setContacts([
+      { user_id: 'u', email: 'e', display_name: 'd', conversation_id: 'c', online: false, last_seen_at: null },
+    ]);
     s.setActiveId('c1');
     s.reset();
     const after = useChatStore.getState();
     expect(after.contacts).toEqual([]);
     expect(after.activeId).toBeNull();
     expect(after.messages).toEqual({});
+  });
+
+  it('setPresenceFromContacts 後 applyPresenceEvent 更新單一好友', () => {
+    const s = useChatStore.getState();
+    s.setPresenceFromContacts([
+      { user_id: 'a', email: 'a@e', display_name: 'A', conversation_id: 'ca', online: true, last_seen_at: null },
+      { user_id: 'b', email: 'b@e', display_name: 'B', conversation_id: 'cb', online: false, last_seen_at: null },
+    ]);
+    expect(useChatStore.getState().presence.a.online).toBe(true);
+
+    s.applyPresenceEvent({ type: 'presence', user_id: 'a', online: false, last_seen_at: '2026-06-23T00:00:00Z' });
+    const p = useChatStore.getState().presence;
+    expect(p.a).toEqual({ online: false, last_seen_at: '2026-06-23T00:00:00Z' });
+    expect(p.b.online).toBe(false); // 其他好友不受影響
+  });
+
+  it('reset 清空 presence', () => {
+    const s = useChatStore.getState();
+    s.applyPresenceEvent({ type: 'presence', user_id: 'a', online: true, last_seen_at: null });
+    s.reset();
+    expect(useChatStore.getState().presence).toEqual({});
   });
 
   it('appendOptimistic 後 ackMessage 把樂觀訊息換成正式訊息', () => {
