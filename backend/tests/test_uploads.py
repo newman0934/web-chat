@@ -43,6 +43,38 @@ async def test_upload_too_large_413(client, register_user, auth_headers):
     assert resp.status_code == 413
 
 
+async def test_upload_at_limit_ok(client, register_user, auth_headers):
+    """恰好等於上限(10MB)可上傳成功(邊界含端點)。"""
+    token = await register_user("atlimit@example.com", "AtLimit")
+    exact = b"x" * (10 * 1024 * 1024)
+    resp = await client.post(
+        "/uploads",
+        files={"file": ("exact.bin", exact, "application/octet-stream")},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["size"] == 10 * 1024 * 1024
+
+
+async def test_upload_multichunk_roundtrip(client, register_user, auth_headers):
+    """跨多個讀取分塊的檔案,內容須完整不變(驗證分塊讀取的重組正確)。"""
+    token = await register_user("multi@example.com", "Multi")
+    # 200KB,內容有變化以便偵測分塊邊界的錯置。
+    content = bytes(range(256)) * 800
+    up = await client.post(
+        "/uploads",
+        files={"file": ("blob.bin", content, "application/octet-stream")},
+        headers=auth_headers(token),
+    )
+    assert up.status_code == 201, up.text
+    assert up.json()["size"] == len(content)
+    # 下載回來比對位元完全相同
+    att_id = up.json()["id"]
+    dl = await client.get(f"/attachments/{att_id}?token={token}")
+    assert dl.status_code == 200
+    assert dl.content == content
+
+
 async def test_download_orphan_only_uploader(client, register_user, auth_headers):
     owner = await register_user("own@example.com", "Own")
     other = await register_user("oth@example.com", "Oth")

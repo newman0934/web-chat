@@ -26,6 +26,7 @@ from app.storage import make_stored_name, save_bytes, stored_path
 router = APIRouter(tags=["uploads"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+UPLOAD_CHUNK_BYTES = 64 * 1024
 
 
 @router.post("/uploads", response_model=AttachmentOut, status_code=status.HTTP_201_CREATED)
@@ -34,11 +35,20 @@ async def upload(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    data = await file.read()
+    # 宣告大小(Content-Length，若有)就先擋掉,連讀都不必。
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="檔案過大（上限 10MB）")
+    # 分塊讀取並累計;一超過上限就中止,避免把可能超大(或宣告大小造假)的檔案整個載入記憶體。
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="檔案過大（上限 10MB）")
+        chunks.append(chunk)
+    data = b"".join(chunks)
     if not data:
         raise HTTPException(status_code=400, detail="空檔案")
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="檔案過大（上限 10MB）")
 
     content_type = file.content_type or "application/octet-stream"
     original_name = file.filename or "file"
