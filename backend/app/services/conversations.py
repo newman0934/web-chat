@@ -252,8 +252,14 @@ async def build_forwarded_from(db: AsyncSession, message: Message) -> dict | Non
     }
 
 
-async def serialize_message_out(db: AsyncSession, m: Message):
-    """把一則 Message 組成 REST 的 MessageOut（含附件、表情、回覆/轉發預覽）。"""
+async def serialize_message_out(
+    db: AsyncSession, m: Message, read_count_value: int | None = None
+):
+    """把一則 Message 組成 MessageOut（含附件、表情、回覆/轉發預覽）。
+
+    REST 與 WS 共用此單一真相（WS 端再 model_dump(mode="json")）。
+    read_count_value 給定時直接採用（如剛送出的新訊息固定為 0，省一次查詢）；None 則查詢。
+    """
     from app.schemas import AttachmentOut, ForwardedFromOut, MessageOut, ReplyPreviewOut
 
     deleted = m.deleted_at is not None
@@ -263,10 +269,11 @@ async def serialize_message_out(db: AsyncSession, m: Message):
     # Pydantic accepts uuid.UUID for uuid fields directly.
     reply_to_d = await build_reply_preview(db, m)
     forwarded_from_d = await build_forwarded_from(db, m)
+    rc = read_count_value if read_count_value is not None else await read_count(db, m.id)
     return MessageOut(
         id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
         content="" if deleted else m.content, created_at=m.created_at,
-        read_count=await read_count(db, m.id),
+        read_count=rc,
         attachment=AttachmentOut.model_validate(att) if att else None,
         edited_at=m.edited_at,
         deleted=deleted,
