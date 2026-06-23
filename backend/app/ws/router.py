@@ -15,10 +15,9 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import db as db_module
-from app.auth.security import decode_access_token
+from app.auth.deps import resolve_user_from_token
 from app.models import User
 from app.services.presence import build_presence_event, get_friend_ids
 from app.ws.handlers import calls as call_handlers
@@ -49,24 +48,11 @@ async def _emit_presence(
             await manager.send_to_user(fid, event)
 
 
-async def _resolve_user(db: AsyncSession, token: str | None) -> User | None:
-    if not token:
-        return None
-    sub = decode_access_token(token)
-    if sub is None:
-        return None
-    try:
-        uid = uuid.UUID(sub)
-    except ValueError:
-        return None
-    return await db.get(User, uid)
-
-
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
     """連線入口：先用 query 的 JWT 驗證，通過才 accept 並進入收訊息迴圈。"""
     async with db_module.SessionLocal() as db:
-        user = await _resolve_user(db, token)
+        user = await resolve_user_from_token(db, token)
     if user is None:
         # 1008 = policy violation；前端據此判斷 token 失效並導回登入。
         await websocket.close(code=1008)

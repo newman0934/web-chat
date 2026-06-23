@@ -15,8 +15,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import get_current_user
-from app.auth.security import decode_access_token
+from app.auth.deps import get_current_user, resolve_user_from_token
 from app.db import get_db
 from app.models import Attachment, Message, User
 from app.schemas import AttachmentOut
@@ -73,19 +72,11 @@ async def upload(
 async def _resolve_user(
     db: AsyncSession, token: str | None, authorization: str | None
 ) -> User | None:
+    """下載端點:token 可走 query(?token=)或 Authorization header;取出 raw 後交共用解析。"""
     raw = token
     if raw is None and authorization and authorization.lower().startswith("bearer "):
         raw = authorization[7:]
-    if not raw:
-        return None
-    sub = decode_access_token(raw)
-    if sub is None:
-        return None
-    try:
-        uid = uuid.UUID(sub)
-    except ValueError:
-        return None
-    return await db.get(User, uid)
+    return await resolve_user_from_token(db, raw)
 
 
 @router.get("/attachments/{attachment_id}")

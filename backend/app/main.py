@@ -8,6 +8,7 @@ from app.routers import (
     auth,
     contacts,
     conversations,
+    group_management,
     messages,
     notifications,
     uploads,
@@ -33,6 +34,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(contacts.router)
 app.include_router(conversations.router)
+app.include_router(group_management.router)
 app.include_router(messages.router)
 app.include_router(uploads.router)
 app.include_router(notifications.router)
