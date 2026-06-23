@@ -5,7 +5,9 @@ import type { ServerWsMessage } from '../../contracts';
 import { useChatStore } from './store';
 
 export interface DispatchDeps {
-  /** 重新載入對話清單（收到新訊息 / 對話變動時）。 */
+  /** 目前登入者 id（判斷收到的訊息是否為自己送出,以決定未讀是否 +1）。 */
+  currentUserId: string;
+  /** 重新載入對話清單（僅在新訊息屬於清單外的新對話、或對話變動時才需要）。 */
   reloadConversations: () => void;
   /** 對「正開著的對話」回報已讀。 */
   sendRead: (conversationId: string) => void;
@@ -26,7 +28,10 @@ export function dispatchServerMessage(msg: ServerWsMessage, deps: DispatchDeps):
       if (st.activeId === msg.message.conversation_id) {
         deps.sendRead(msg.message.conversation_id);
       }
-      deps.reloadConversations();
+      // 就地更新對話清單(last_message / 未讀 / 排序);不在清單(新對話)才退回重抓。
+      if (!st.applyIncomingToConversations(msg.message, deps.currentUserId)) {
+        deps.reloadConversations();
+      }
       break;
     case 'read':
       st.markRead(msg.conversation_id, msg.message_ids);

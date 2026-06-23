@@ -137,6 +137,45 @@ describe('useChatStore', () => {
     s.updateMessage({ ...realMsg('m1'), content: 'edited', conversation_id: 'c1' });
     expect(useChatStore.getState().messages['c1'][0].content).toBe('edited');
   });
+
+  describe('applyIncomingToConversations', () => {
+    it('非 active、他人訊息 → 更新 last_message、未讀 +1、置頂、回 true', () => {
+      const s = useChatStore.getState();
+      s.setConversations([conv('c0', 0), conv('c1', 2)]);
+      const ok = s.applyIncomingToConversations(
+        realMsg('m9', 'c1', { sender_id: 'other', content: '新訊息' }), 'me',
+      );
+      expect(ok).toBe(true);
+      const cs = useChatStore.getState().conversations;
+      expect(cs[0].id).toBe('c1'); // 置頂
+      expect(cs[0].last_message!.id).toBe('m9');
+      expect(cs[0].unread_count).toBe(3);
+    });
+
+    it('active 對話 → 不增未讀', () => {
+      const s = useChatStore.getState();
+      s.setConversations([conv('c1', 0)]);
+      s.setActiveId('c1');
+      s.applyIncomingToConversations(realMsg('m9', 'c1', { sender_id: 'other' }), 'me');
+      expect(useChatStore.getState().conversations[0].unread_count).toBe(0);
+    });
+
+    it('自己送出 → 不增未讀', () => {
+      const s = useChatStore.getState();
+      s.setConversations([conv('c1', 0)]);
+      s.applyIncomingToConversations(realMsg('m9', 'c1', { sender_id: 'me' }), 'me');
+      expect(useChatStore.getState().conversations[0].unread_count).toBe(0);
+    });
+
+    it('對話不在清單 → 回 false、不改動', () => {
+      const s = useChatStore.getState();
+      s.setConversations([conv('c1', 0)]);
+      const ok = s.applyIncomingToConversations(realMsg('m9', 'cX', { sender_id: 'other' }), 'me');
+      expect(ok).toBe(false);
+      expect(useChatStore.getState().conversations).toHaveLength(1);
+      expect(useChatStore.getState().conversations[0].unread_count).toBe(0);
+    });
+  });
 });
 
 function convG(id: string): Conversation {

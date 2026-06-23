@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Message } from '../../contracts';
+import type { Conversation, Message } from '../../contracts';
 import { useChatStore } from './store';
 import { dispatchServerMessage, type DispatchDeps } from './wsDispatch';
 
@@ -22,10 +22,18 @@ function msg(id: string, conversationId = 'c1', over: Partial<Message> = {}): Me
 
 function deps(over: Partial<DispatchDeps> = {}): DispatchDeps {
   return {
+    currentUserId: 'me',
     reloadConversations: vi.fn(),
     sendRead: vi.fn(),
     handleCallSignal: vi.fn(),
     ...over,
+  };
+}
+
+function conv(id: string, over: Partial<Conversation> = {}): Conversation {
+  return {
+    id, type: 'direct', name: null, other_user: null, members: [],
+    last_message: null, unread_count: 0, roles: {}, ...over,
   };
 }
 
@@ -47,12 +55,35 @@ describe('dispatchServerMessage', () => {
     expect(list[0].id).toBe('r1');
   });
 
-  it('message:收訊息、非 active 不送 read、重載清單', () => {
+  it('message:對話不在清單(新對話)→ 退回重抓', () => {
     const d = deps();
     dispatchServerMessage({ type: 'message', message: msg('m1', 'c1') }, d);
     expect(useChatStore.getState().messages['c1']).toHaveLength(1);
     expect(d.sendRead).not.toHaveBeenCalled();
     expect(d.reloadConversations).toHaveBeenCalledOnce();
+  });
+
+  it('message:對話在清單 → 就地更新(last_message/未讀/置頂)、不重抓', () => {
+    useChatStore.getState().setConversations([conv('c0'), conv('c1')]);
+    const d = deps();
+    dispatchServerMessage(
+      { type: 'message', message: msg('m1', 'c1', { sender_id: 'other' }) },
+      d,
+    );
+    expect(d.reloadConversations).not.toHaveBeenCalled();
+    const convs = useChatStore.getState().conversations;
+    expect(convs[0].id).toBe('c1'); // 置頂
+    expect(convs[0].last_message?.id).toBe('m1');
+    expect(convs[0].unread_count).toBe(1);
+  });
+
+  it('message:自己送出的廣播(轉發回聲)不增未讀', () => {
+    useChatStore.getState().setConversations([conv('c1')]);
+    dispatchServerMessage(
+      { type: 'message', message: msg('m1', 'c1', { sender_id: 'me' }) },
+      deps(),
+    );
+    expect(useChatStore.getState().conversations[0].unread_count).toBe(0);
   });
 
   it('message:正開著該對話時送 read', () => {

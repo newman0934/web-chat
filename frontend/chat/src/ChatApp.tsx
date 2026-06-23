@@ -93,12 +93,13 @@ export default function ChatApp({
   const handleServerMessage = useCallback(
     (msg: ServerWsMessage) =>
       dispatchServerMessage(msg, {
+        currentUserId: currentUser.id,
         reloadConversations: () => { void loadConversations(); },
         sendRead: (conversationId) =>
           { socketRef.current?.send({ type: 'read', conversation_id: conversationId }); },
         handleCallSignal: (m) => callRef.current.handleSignal(m),
       }),
-    [loadConversations],
+    [loadConversations, currentUser.id],
   );
 
   const socket = useChatSocket(wsBaseUrl, token, {

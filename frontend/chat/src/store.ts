@@ -52,6 +52,12 @@ interface ChatState {
   hasMessages: (conversationId: string) => boolean;
   /** 把某對話的未讀數歸零（本地樂觀更新）。 */
   clearUnread: (conversationId: string) => void;
+  /**
+   * 收到新訊息時就地更新對話清單(更新 last_message、必要時未讀 +1、移到最前),
+   * 免去每則訊息重抓整份 /conversations。回傳 false 表示該對話不在清單(新對話)
+   * → 呼叫端應退回重抓。非 active 且非自己送的訊息才 +1 未讀。
+   */
+  applyIncomingToConversations: (message: Message, currentUserId: string) => boolean;
 
   // ---- 訊息 mutation（重用 messageStore 純函式） ----
   loadHistory: (conversationId: string, history: Message[]) => void;
@@ -115,6 +121,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
         c.id === conversationId ? { ...c, unread_count: 0 } : c,
       ),
     })),
+
+  applyIncomingToConversations: (message, currentUserId) => {
+    const s = get();
+    const idx = s.conversations.findIndex((c) => c.id === message.conversation_id);
+    if (idx === -1) return false; // 不在清單(新對話)→ 呼叫端退回重抓
+    const conv = s.conversations[idx];
+    const isActive = s.activeId === message.conversation_id;
+    const fromMe = message.sender_id === currentUserId;
+    const updated: Conversation = {
+      ...conv,
+      last_message: message,
+      // active(正在讀)或自己送出 → 不增未讀;否則 +1(與伺服器未讀語意一致)。
+      unread_count: isActive || fromMe ? conv.unread_count : conv.unread_count + 1,
+    };
+    // 移到最前:最新訊息即最新對話(維持「新→舊」排序)。
+    const rest = s.conversations.filter((_, i) => i !== idx);
+    set({ conversations: [updated, ...rest] });
+    return true;
+  },
 
   loadHistory: (conversationId, history) =>
     set((s) => ({
