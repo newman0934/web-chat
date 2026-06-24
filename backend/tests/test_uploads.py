@@ -92,6 +92,23 @@ async def test_download_orphan_only_uploader(client, register_user, auth_headers
     assert no.status_code == 404
 
 
+async def test_download_non_ascii_filename(client, register_user, auth_headers):
+    """中文(非 ASCII)檔名下載不再 500,且 Content-Disposition 帶 RFC 6266 filename*。"""
+    owner = await register_user("zh@example.com", "ZH")
+    att = (await client.post(
+        "/uploads",
+        files={"file": ("報告.pdf", b"data", "application/pdf")},
+        headers=auth_headers(owner),
+    )).json()
+    resp = await client.get(f"/attachments/{att['id']}", headers=auth_headers(owner))
+    assert resp.status_code == 200
+    assert resp.content == b"data"
+    cd = resp.headers["content-disposition"]
+    # UTF-8 百分比編碼的原名(報告 = %E5%A0%B1%E5%91%8A)。
+    assert "filename*=UTF-8''" in cd
+    assert "%E5%A0%B1%E5%91%8A" in cd
+
+
 async def test_download_accepts_query_token(client, register_user, auth_headers):
     owner = await register_user("q@example.com", "Q")
     att = (await client.post(

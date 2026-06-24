@@ -1,6 +1,7 @@
 """檔案上傳與下載：存後端本機檔案系統，下載做對話成員權限檢查。"""
 
 import uuid
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -26,6 +27,20 @@ router = APIRouter(tags=["uploads"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 64 * 1024
+
+
+def _content_disposition(filename: str) -> str:
+    """組 attachment 的 Content-Disposition。
+
+    HTTP header 值只能是 latin-1,非 ASCII 檔名(如中文)直接放 `filename="..."` 會在
+    送出時 UnicodeEncodeError → 下載 500。依 RFC 6266 同時給:
+    - `filename=`：ASCII fallback(丟掉非 ASCII 字元,供舊客戶端)
+    - `filename*=UTF-8''…`：百分比編碼的 UTF-8 原名(現代瀏覽器優先採用)
+    """
+    ascii_fallback = filename.encode("ascii", "ignore").decode("ascii").replace('"', "_")
+    ascii_fallback = ascii_fallback or "file"  # 全非 ASCII 時給個保底名
+    encoded = quote(filename, safe="")
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
 
 
 @router.post("/uploads", response_model=AttachmentOut, status_code=status.HTTP_201_CREATED)
@@ -110,11 +125,8 @@ async def download(
     if not path.exists():
         raise HTTPException(status_code=404, detail="檔案不存在")
 
-    if att.is_image:
-        disposition = "inline"
-    else:
-        safe_name = att.original_name.replace('"', "_")
-        disposition = f'attachment; filename="{safe_name}"'
+    # 圖片內嵌顯示;其他檔案以附件下載(檔名走 RFC 6266,支援中文等非 ASCII)。
+    disposition = "inline" if att.is_image else _content_disposition(att.original_name)
     return FileResponse(
         path,
         media_type=att.content_type,
