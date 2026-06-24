@@ -346,24 +346,45 @@ SQLite + Postgres 雙環境一致。
 
 ---
 
+# 訊息撤回（message-recall,SDD 全流程,2026-06-25）
+
+規格見 `docs/superpowers/specs/message-recall/`。與既有「刪除/還原」並存且語義不同
+(刪除可還原、顯示泡泡佔位;撤回不可復原、顯示系統訊息)。
+
+- **資料模型**:`messages.recalled_at`(migration 0013);`MessageOut.recalled`;
+  序列化以 `masked = deleted or recalled` 統一遮蔽(含 reply 預覽)。
+- **後端**:WS `recall`(寄件人本人、2 分內)→ 清空 content、移除附件與表情、自動解釘,
+  廣播 `message_updated`(+`message_unpinned`);已撤回視同已移除 ——
+  edit/delete/react/pin/forward 守衛擴為「deleted 或 recalled」一律擋,**搜尋排除**已撤回。
+  RECALL_WINDOW=2 分。
+- **前端**:泡泡動作加「撤回」(依 `canRecall` 純函式);撤回訊息渲染為置中系統列
+  「你/{對方} 撤回了一則訊息」;沿用 `message_updated` 即時同步(store 不新增事件)。
+- **測試**:backend `test_recall`(9)+ `test_migration_0013`(1);chat `recall.test`(6);
+  e2e `recall-api`(7)+ `recall-ui`(1)。Postgres 另驗序列化遮蔽 + 搜尋排除。
+
+驗證:backend **200 passed**、chat vitest **139**、e2e **82**、三 app tsc 乾淨;
+SQLite + Postgres 雙環境一致。
+
+---
+
 # 測試狀態
 
 ## Backend
 
-- Pytest：PASS（190）
+- Pytest：PASS（200）
 
 ---
 
 ## Frontend
 
-- Vitest：PASS（chat 133、shell 8）
+- Vitest：PASS（chat 139、shell 8）
 - TypeScript Type Check：PASS（chat / shell / auth）
 
 ---
 
 ## E2E
 
-- Playwright：PASS（74 tests,於 GitHub e2e.yml workflow 跑全棧）
+- Playwright：PASS（82 tests,於 GitHub e2e.yml workflow 跑全棧）
 
 ---
 
