@@ -279,6 +279,9 @@ SQLite + Postgres 雙環境綠）
   fallback),補中文檔名下載測試。
 - **shell `useAuth` 測試補強**(3→8):初始 loading、logout 清空、網路錯誤亦 logout、
   Bearer 呼叫 /users/me、token 變更後舊回應不覆寫(cancelled 競態)。
+- **compose healthcheck**:backend 以 stdlib 戳 `/health`、三前端用 busybox wget 戳
+  preview 埠(`127.0.0.1`,避開 IPv6 `::1` 拒連);shell `depends_on` 改
+  `condition: service_healthy`,等 remote ready 才起。`up -d --wait` 五容器皆 healthy。
 
 驗證:backend **156 passed**、chat vitest 117、三 app tsc 乾淨;CI 與 Docker build 兩條
 workflow 於 GitHub 皆綠。
@@ -308,7 +311,8 @@ workflow 於 GitHub 皆綠。
 
 ## Docker
 
-- Docker Compose：PASS（db + backend + 三前端一鍵起）
+- Docker Compose：PASS（db + backend + 三前端一鍵起;全服務有 healthcheck,
+  `up -d --wait` 五容器皆 healthy、shell 等 auth/chat ready 才起）
 - Docker Build（CI,buildx bake + GHA cache）：PASS
 - Postgres Migration：PASS
 
