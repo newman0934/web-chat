@@ -267,7 +267,7 @@ describe('Thread', () => {
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
         onEdit={vi.fn()} onDelete={vi.fn()} onReact={onReact} onUpload={vi.fn()} />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /👍 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: /👍 反應 1/ }));
     expect(onReact).toHaveBeenCalledWith('m1', '👍');
   });
 

@@ -147,18 +147,23 @@ export function MessageBubble({
 
       {/* 表情列 */}
       <div className="mt-1 flex flex-wrap items-center gap-1">
-        {message.reactions.map((r) => (
-          <button
-            key={r.emoji}
-            type="button"
-            onClick={() => onReact(message.id, r.emoji)}
-            className={`rounded-full px-2 py-0.5 text-xs ${
-              r.user_ids.includes(currentUserId) ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {r.emoji} {r.count}
-          </button>
-        ))}
+        {message.reactions.map((r) => {
+          const mineReacted = r.user_ids.includes(currentUserId);
+          return (
+            <button
+              key={r.emoji}
+              type="button"
+              aria-label={`${r.emoji} 反應 ${r.count} 人${mineReacted ? '(含你)' : ''}，點擊切換`}
+              aria-pressed={mineReacted}
+              onClick={() => onReact(message.id, r.emoji)}
+              className={`rounded-full px-2 py-0.5 text-xs ${
+                mineReacted ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {r.emoji} {r.count}
+            </button>
+          );
+        })}
         <ReactionPicker onPick={(e) => onReact(message.id, e)} />
       </div>
 
