@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.logging_config import configure_logging, log_requests
 from app.routers import (
     auth,
     contacts,
@@ -17,8 +18,12 @@ from app.routers import (
 from app.ws import router as ws_router
 
 settings = get_settings()
+configure_logging()
 
 app = FastAPI(title="chat-web API", version="0.1.0")
+
+# HTTP 請求記錄(method/path/status/耗時;不含 query)。WebSocket 不經此 middleware。
+app.middleware("http")(log_requests)
 
 # 限定前端三個 app（shell/auth/chat）的來源，避免任意網站呼叫本 API。
 app.add_middleware(
