@@ -66,6 +66,7 @@ async def serialize_message_out(
         deleted_at=m.deleted_at,
         reactions=groups,
         kind=m.kind,
+        pinned=m.pinned_at is not None,
         reply_to=ReplyPreviewOut(**reply_to_d) if reply_to_d else None,
         forwarded_from=ForwardedFromOut(**forwarded_from_d) if forwarded_from_d else None,
     )
@@ -165,6 +166,7 @@ async def serialize_messages_out(db: AsyncSession, messages: list[Message]):
             deleted_at=m.deleted_at,
             reactions=groups,
             kind=m.kind,
+            pinned=m.pinned_at is not None,
             reply_to=ReplyPreviewOut(**reply_to_d) if reply_to_d else None,
             forwarded_from=ForwardedFromOut(**forwarded_from_d) if forwarded_from_d else None,
         ))

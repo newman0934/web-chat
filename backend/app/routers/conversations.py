@@ -18,6 +18,7 @@ from app.services.conversation_serializers import (
     serialize_conversations_out,
     serialize_messages_out,
 )
+from app.services.pins import list_pins
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -148,3 +149,16 @@ async def list_messages(
     messages = list(result.scalars().all())
     messages.reverse()
     return await serialize_messages_out(db, messages)
+
+
+@router.get("/{conversation_id}/pins", response_model=list[MessageOut])
+async def list_conversation_pins(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """該對話的釘選訊息(pinned_at 由新到舊)。非成員 → 404。"""
+    conv = await get_conversation_for_member(db, conversation_id, current_user.id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="查無此對話或無權限")
+    return await serialize_messages_out(db, await list_pins(db, conversation_id))

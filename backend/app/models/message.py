@@ -36,6 +36,10 @@ class Message(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 釘選時間;None = 未釘選。pinned = pinned_at IS NOT NULL。
+    pinned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     kind: Mapped[str] = mapped_column(
         String(16), nullable=False, default="user", server_default="user"
     )

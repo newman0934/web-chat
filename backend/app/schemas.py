@@ -118,6 +118,7 @@ class MessageOut(BaseModel):
     deleted_at: datetime | None = None
     reactions: list[ReactionGroupOut] = Field(default_factory=list)
     kind: str = "user"
+    pinned: bool = False
     reply_to: ReplyPreviewOut | None = None
     forwarded_from: ForwardedFromOut | None = None
 

@@ -22,6 +22,7 @@ from app.services.conversations import (
     read_count as read_count_fn,
 )
 from app.services.notifications import create_notification, serialize_notification
+from app.services.pins import PIN_LIMIT, can_pin, count_pins
 from app.ws.manager import manager
 from app.ws.serializers import serialize_message
 from app.ws.wsutils import as_utc, parse_uuid
@@ -244,11 +245,16 @@ async def handle_delete(websocket, user, data):
         if msg is None or msg.sender_id != user.id:
             await websocket.send_json({"type": "error", "reason": "forbidden"})
             return
+        was_pinned = msg.pinned_at is not None
         if msg.deleted_at is None:
             msg.deleted_at = datetime.now(timezone.utc)
+            if was_pinned:
+                msg.pinned_at = None  # 刪除即自動解釘(釘選列不顯示已刪訊息)
             await db.commit()
             await db.refresh(msg)
         await _broadcast_updated(db, msg.conversation_id, user.id, msg)
+        if was_pinned:
+            await _broadcast_unpinned(db, msg.conversation_id, user.id, msg.id)
 
 
 async def handle_restore(websocket, user, data):
@@ -351,6 +357,79 @@ async def handle_forward(websocket: WebSocket, user: User, data: dict) -> None:
             await manager.send_to_user(uid, {"type": "message", "message": payload})
     if notif_push is not None:
         await _push_notification(*notif_push)
+
+
+async def _broadcast_pinned(db, conv_id, actor_id, message: Message) -> None:
+    payload = await serialize_message(db, message, read_count=await read_count_fn(db, message.id))
+    for rid in [actor_id, *await get_other_member_ids(db, conv_id, actor_id)]:
+        if manager.is_online(rid):
+            await manager.send_to_user(rid, {"type": "message_pinned", "message": payload})
+
+
+async def _broadcast_unpinned(db, conv_id, actor_id, message_id) -> None:
+    for rid in [actor_id, *await get_other_member_ids(db, conv_id, actor_id)]:
+        if manager.is_online(rid):
+            await manager.send_to_user(rid, {
+                "type": "message_unpinned",
+                "conversation_id": str(conv_id),
+                "message_id": str(message_id),
+            })
+
+
+async def handle_pin(websocket, user, data):
+    """釘選訊息。協定:{type:"pin", message_id}。廣播 message_pinned 給對話所有成員。"""
+    mid = parse_uuid(data.get("message_id"))
+    if mid is None:
+        await websocket.send_json({"type": "error", "reason": "invalid_payload"})
+        return
+    async with db_module.SessionLocal() as db:
+        msg = await db.get(Message, mid)
+        if msg is None or msg.deleted_at is not None:
+            await websocket.send_json({"type": "error", "reason": "not_found"})
+            return
+        conv = await get_conversation_for_member(db, msg.conversation_id, user.id)
+        if conv is None:
+            await websocket.send_json({"type": "error", "reason": "not_found"})
+            return
+        if not await can_pin(db, conv, user.id):
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+        if msg.pinned_at is not None:
+            # 冪等:已釘 → 不變,仍廣播當前狀態以同步(前端 addPin 去重)。
+            await _broadcast_pinned(db, conv.id, user.id, msg)
+            return
+        if await count_pins(db, conv.id) >= PIN_LIMIT:
+            await websocket.send_json({"type": "error", "reason": "pin_limit"})
+            return
+        msg.pinned_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(msg)
+        await _broadcast_pinned(db, conv.id, user.id, msg)
+
+
+async def handle_unpin(websocket, user, data):
+    """取消釘選。協定:{type:"unpin", message_id}。廣播 message_unpinned。"""
+    mid = parse_uuid(data.get("message_id"))
+    if mid is None:
+        await websocket.send_json({"type": "error", "reason": "invalid_payload"})
+        return
+    async with db_module.SessionLocal() as db:
+        msg = await db.get(Message, mid)
+        if msg is None:
+            await websocket.send_json({"type": "error", "reason": "not_found"})
+            return
+        conv = await get_conversation_for_member(db, msg.conversation_id, user.id)
+        if conv is None:
+            await websocket.send_json({"type": "error", "reason": "not_found"})
+            return
+        if not await can_pin(db, conv, user.id):
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+        if msg.pinned_at is not None:
+            msg.pinned_at = None
+            await db.commit()
+        # 冪等:未釘也廣播 unpinned 以同步(前端 removePin 對不存在者 no-op)。
+        await _broadcast_unpinned(db, conv.id, user.id, msg.id)
 
 
 async def handle_react(websocket, user, data):

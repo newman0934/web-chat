@@ -98,6 +98,10 @@ async def _handle_client_message(websocket: WebSocket, user: User, data: dict) -
         await msg_handlers.handle_restore(websocket, user, data)
     elif msg_type == "react":
         await msg_handlers.handle_react(websocket, user, data)
+    elif msg_type == "pin":
+        await msg_handlers.handle_pin(websocket, user, data)
+    elif msg_type == "unpin":
+        await msg_handlers.handle_unpin(websocket, user, data)
     elif msg_type == "forward":
         await msg_handlers.handle_forward(websocket, user, data)
     elif msg_type in call_handlers.CALL_TYPES:
