@@ -1,0 +1,11 @@
+# 不要把這些帶進 build context(加速、避免覆蓋容器內裝好的相依)
+*/node_modules
+*/dist
+*/.vite
+*/coverage
+*/playwright-report
+*/test-results
+**/*.tsbuildinfo
+.git
+Dockerfile
+.dockerignore
