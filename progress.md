@@ -283,8 +283,23 @@ SQLite + Postgres 雙環境綠）
   preview 埠(`127.0.0.1`,避開 IPv6 `::1` 拒連);shell `depends_on` 改
   `condition: service_healthy`,等 remote ready 才起。`up -d --wait` 五容器皆 healthy。
 
-驗證:backend **156 passed**、chat vitest 117、三 app tsc 乾淨;CI 與 Docker build 兩條
-workflow 於 GitHub 皆綠。
+## E2E 進 CI(Playwright)
+
+- 新增 `.github/workflows/e2e.yml`:ubuntu runner 建 backend venv、裝三前端與 e2e 相依、
+  `playwright install chromium`,起全棧跑 **51 個 E2E**;path-filtered + 獨立 workflow,
+  失敗上傳 report/trace。`workflow_dispatch` 可手動觸發。
+- 接 CI 時依序踩到並修掉三個環境差異:
+  1. `playwright.config.ts` venv python 路徑**寫死 Windows**(`Scripts/python.exe`)→ 改依
+     `process.platform` 切換(Linux 用 `bin/python`)。
+  2. backend 缺 `aiosqlite`(它在 `[dev]` 相依群,正式走 Postgres+asyncpg)→ workflow 改裝
+     `.[dev]`。
+  3. **註冊限流誤擋**:E2E 從同一 runner IP 註冊大量帳號,超過每 IP 20 次/小時即 429,
+     後半段測試連環失敗 → 將 `register_rate_limit_max/window` 抽到 Settings(預設仍 20),
+     e2e 注入 `REGISTER_RATE_LIMIT_MAX=100000` 等同停用。
+- 結果:E2E workflow 於 GitHub 綠燈(51 tests / ~1m36s)。
+
+驗證:backend **156 passed**、chat vitest 117、shell vitest 8、三 app tsc 乾淨;
+CI、Docker build、E2E 三條 workflow 於 GitHub 皆綠。
 
 ---
 
@@ -305,7 +320,7 @@ workflow 於 GitHub 皆綠。
 
 ## E2E
 
-- Playwright：PASS
+- Playwright：PASS（51 tests,於 GitHub e2e.yml workflow 跑全棧，~1m36s）
 
 ---
 
@@ -363,9 +378,9 @@ workflow 於 GitHub 皆綠。
 
 ## P2
 
-✅ GitHub Actions 已實跑:CI(backend pytest + 前端三 app)與 Docker build
-(buildx bake + GHA cache)兩條 workflow 於 push main / PR 觸發,皆綠。
-Playwright E2E 較重,日後可另開 job。
+✅ GitHub Actions 已實跑:CI(backend pytest + 前端三 app)、Docker build
+(buildx bake + GHA cache)、**E2E**(Playwright 51 tests 全棧,`e2e.yml`)三條
+workflow 於 push main / PR 觸發,皆綠。
 
 正式部署前提醒:設 `ENVIRONMENT=production` 並以環境變數覆寫 `JWT_SECRET`
 (否則 `ensure_secure()` 會擋下啟動)。
