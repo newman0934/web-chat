@@ -31,6 +31,17 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # 用 stdlib 戳 /health(slim image 無 curl/wget);start_period 留遷移 + 啟動時間。
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # 前端三個 micro-frontend(共用 frontend/Dockerfile,以 APP build arg 區分)。
   # remote(auth/chat)必須 build+preview;remoteEntry / API URL 於 build 時內聯,
@@ -43,6 +54,13 @@ services:
     container_name: chatweb-auth
     ports:
       - "5001:5001"
+    # alpine 內建 busybox wget;用 127.0.0.1(非 localhost,後者會先試 IPv6 ::1 而被拒)。
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5001/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   frontend-chat:
     build:
@@ -52,6 +70,12 @@ services:
     container_name: chatweb-chat
     ports:
       - "5002:5002"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5002/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   frontend-shell:
     build:
@@ -59,11 +83,20 @@ services:
       args:
         APP: shell
     container_name: chatweb-shell
+    # 等 remote(auth/chat)真的 ready 再起 shell,避免首載 remoteEntry 撲空。
     depends_on:
-      - frontend-auth
-      - frontend-chat
+      frontend-auth:
+        condition: service_healthy
+      frontend-chat:
+        condition: service_healthy
     ports:
       - "5000:5000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   pgdata:
