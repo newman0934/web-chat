@@ -1,7 +1,7 @@
 // chat remote 的 REST 客戶端：包裝 fetch，統一帶上 JWT 與錯誤處理。
 // 即時訊息走 WebSocket（見 useChatSocket.ts）；這裡只負責「非即時」的讀取與加好友。
 
-import type { Attachment, Contact, Conversation, GroupCreateRequest, Message, MessageVersion, NotificationList } from '../../contracts';
+import type { Attachment, Contact, Conversation, GroupCreateRequest, Message, MessageVersion, NotificationList, SearchResponse } from '../../contracts';
 
 export class ApiClient {
   /** @param baseUrl REST API 根路徑 @param token JWT，附在 Authorization header */
@@ -67,6 +67,28 @@ export class ApiClient {
     return this.req<Message[]>(
       `/conversations/${conversationId}/messages${qs ? `?${qs}` : ''}`,
     );
+  }
+
+  /** 以 around 視窗載入:回傳以該訊息為中心(含前後鄰居)的一段訊息(升序),供搜尋跳轉。 */
+  loadMessagesAround(conversationId: string, messageId: string, limit?: number) {
+    const params = new URLSearchParams({ around: messageId });
+    if (limit) params.set('limit', String(limit));
+    return this.req<Message[]>(`/conversations/${conversationId}/messages?${params.toString()}`);
+  }
+
+  /** 向下分頁:取 after 之後(較新)的訊息(升序)。 */
+  loadMessagesAfter(conversationId: string, after: string, limit?: number) {
+    const params = new URLSearchParams({ after });
+    if (limit) params.set('limit', String(limit));
+    return this.req<Message[]>(`/conversations/${conversationId}/messages?${params.toString()}`);
+  }
+
+  /** 全域搜尋訊息(內容或寄件者名)。before 為下一頁游標。 */
+  searchMessages(q: string, opts?: { before?: string; limit?: number }) {
+    const params = new URLSearchParams({ q });
+    if (opts?.before) params.set('before', opts.before);
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    return this.req<SearchResponse>(`/search/messages?${params.toString()}`);
   }
 
   /** 取得某訊息的編輯歷史（由舊到新，最後一筆為目前版本）。 */

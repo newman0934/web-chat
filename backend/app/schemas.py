@@ -176,6 +176,7 @@ class ConversationRefOut(BaseModel):
 class SearchResultOut(BaseModel):
     message: MessageOut
     conversation: ConversationRefOut
+    sender_name: str  # 寄件者顯示名（群組對話的成員不在 conversation 內，故獨立帶上）
 
 
 class SearchResponseOut(BaseModel):

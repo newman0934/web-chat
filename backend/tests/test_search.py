@@ -190,3 +190,4 @@ async def test_search_endpoint_happy(client, session_factory, auth_headers):
     assert "季度檢討會議紀錄" == item["message"]["content"]
     assert item["conversation"]["type"] == "direct"
     assert item["conversation"]["other_user"]["display_name"] == "Bob"
+    assert item["sender_name"] == "Bob"  # 寄件者名(群組也帶得到)

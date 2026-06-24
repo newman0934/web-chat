@@ -13,7 +13,7 @@ import { ReplyQuoteBlock } from './ReplyQuoteBlock';
 export function MessageBubble({
   message, mine, isGroup, senderName, memberNames, onRetry, attachmentUrl,
   currentUserId, onEdit, onDelete, onReact, onRestore, loadEditHistory,
-  onReply, onForward, onScrollToMessage, bubbleRef,
+  onReply, onForward, onScrollToMessage, bubbleRef, highlighted = false,
 }: {
   message: ChatMessage; mine: boolean; isGroup: boolean;
   senderName?: string;
@@ -30,6 +30,8 @@ export function MessageBubble({
   onForward?: (message: ChatMessage) => void;
   onScrollToMessage: (id: string) => void;
   bubbleRef: (el: HTMLDivElement | null) => void;
+  /** 搜尋跳轉時暫時高亮命中訊息（數秒後由 Thread 清除）。 */
+  highlighted?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -72,8 +74,11 @@ export function MessageBubble({
   return (
     <div
       data-message-id={message.id}
+      data-highlighted={highlighted ? 'true' : undefined}
       ref={bubbleRef}
-      className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}
+      className={`flex flex-col rounded-xl transition-colors duration-500 ${
+        mine ? 'items-end' : 'items-start'
+      } ${highlighted ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''}`}
     >
       <div className={`relative max-w-[70%] rounded-2xl px-4 py-2 ${mine ? 'bg-indigo-600 text-white' : 'bg-white text-slate-800 shadow'}`}>
         {isGroup && !mine && senderName && (

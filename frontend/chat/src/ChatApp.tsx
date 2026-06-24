@@ -4,7 +4,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChatAppProps, ServerWsMessage } from '../../contracts';
+import type { ChatAppProps, SearchResult, ServerWsMessage } from '../../contracts';
+import { toSearchResultView } from './search';
 import { ApiClient, ApiError, UnauthorizedError } from './api';
 import { CallOverlay } from './components/CallOverlay';
 import { ForwardPicker } from './components/ForwardPicker';
@@ -239,6 +240,81 @@ export default function ChatApp({
   const [showInfo, setShowInfo] = useState(false);
   const [forwarding, setForwarding] = useState<string | null>(null);
 
+  // ---- 訊息搜尋 ----
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchCursor, setSearchCursor] = useState<string | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  // 跳轉目標:nonce 每次點結果遞增,讓 Thread 即使跳同一則也重觸發捲動/高亮。
+  const [jump, setJump] = useState<{ id: string; nonce: number } | null>(null);
+
+  // 關鍵字變更 → debounce 300ms 後查詢;cancelled 旗標丟棄過期結果。
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults([]);
+      setSearchCursor(null);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const resp = await api.searchMessages(q, { limit: 20 });
+        if (cancelled) return;
+        setSearchResults(resp.items);
+        setSearchCursor(resp.next_before);
+      } catch (err) {
+        if (cancelled) return;
+        setSearchResults([]);
+        setSearchCursor(null);
+        if (err instanceof UnauthorizedError) onLogout();
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [searchQuery, api, onLogout]);
+
+  /** 載入下一頁搜尋結果(append)。 */
+  const onSearchMore = useCallback(async () => {
+    const q = searchQuery.trim();
+    if (!q || !searchCursor) return;
+    try {
+      const resp = await api.searchMessages(q, { before: searchCursor, limit: 20 });
+      setSearchResults((prev) => [...prev, ...resp.items]);
+      setSearchCursor(resp.next_before);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) onLogout();
+    }
+  }, [api, searchQuery, searchCursor, onLogout]);
+
+  /** 點搜尋結果:切到該對話、以 around 載入視窗、收起搜尋並觸發跳轉高亮。 */
+  const jumpToMessage = useCallback(
+    async (conversationId: string, messageId: string) => {
+      useChatStore.getState().setActiveId(conversationId);
+      try {
+        const windowMsgs = await api.loadMessagesAround(conversationId, messageId, PAGE_SIZE);
+        const st = useChatStore.getState();
+        st.loadHistory(conversationId, windowMsgs);
+        st.setHasMore(conversationId, true); // 視窗上方可能還有更早訊息
+      } catch (err) {
+        if (err instanceof UnauthorizedError) onLogout();
+        return;
+      }
+      socketRef.current?.send({ type: 'read', conversation_id: conversationId });
+      useChatStore.getState().clearUnread(conversationId);
+      void api
+        .markNotificationsRead(conversationId)
+        .then((r) => useChatStore.getState().markConversationRead(conversationId, r.marked))
+        .catch(() => {});
+      setSearchQuery(''); // 收起搜尋,回對話清單
+      setJump({ id: messageId, nonce: Date.now() });
+    },
+    [api, onLogout],
+  );
+
   const runGroupOp = useCallback(
     async (op: () => Promise<unknown>) => {
       try {
@@ -288,6 +364,13 @@ export default function ChatApp({
         onCreateGroup={createGroup}
         onLogout={onLogout}
         presence={presence}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchResults={searchResults.map(toSearchResultView)}
+        searchLoading={searchLoading}
+        searchHasMore={searchCursor !== null}
+        onSearchMore={onSearchMore}
+        onPickResult={jumpToMessage}
         notificationSlot={
           <NotificationCenter
             notifications={notifications}
@@ -318,6 +401,8 @@ export default function ChatApp({
           onStartCall={otherUser ? startCall : undefined}
           onShowGroupInfo={isGroup ? () => setShowInfo(true) : undefined}
           onForward={(m) => setForwarding(m.id)}
+          jumpToMessageId={jump?.id ?? null}
+          jumpNonce={jump?.nonce ?? 0}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center text-slate-400">

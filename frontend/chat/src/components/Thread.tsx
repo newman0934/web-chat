@@ -34,6 +34,9 @@ interface ThreadProps {
   onStartCall?: () => void;
   onShowGroupInfo?: () => void;
   onForward?: (message: ChatMessage) => void;
+  /** 搜尋跳轉目標訊息 id；nonce 每次跳轉遞增以便重跳同一則。 */
+  jumpToMessageId?: string | null;
+  jumpNonce?: number;
 }
 
 /** 右側對話視窗：訊息列表、載入更多、輸入框與送出。 */
@@ -58,8 +61,11 @@ export function Thread({
   onStartCall,
   onShowGroupInfo,
   onForward,
+  jumpToMessageId = null,
+  jumpNonce = 0,
 }: ThreadProps) {
   const [draft, setDraft] = useState('');
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [pending, setPending] = useState<Attachment | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -73,6 +79,23 @@ export function Thread({
   useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' });
   }, [messages.length]);
+
+  // 搜尋跳轉:目標訊息渲染後捲動定位並高亮,約 2 秒後清除高亮。
+  // 依賴 messages 確保視窗載入後(bubble 進 DOM)才執行;delay 讓它贏過上面的捲到底部。
+  useEffect(() => {
+    if (!jumpToMessageId) return;
+    if (!bubbleRefs.current[jumpToMessageId]) return;
+    const scrollTimer = setTimeout(() => {
+      bubbleRefs.current[jumpToMessageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+    setHighlightId(jumpToMessageId);
+    const clearTimer = setTimeout(() => setHighlightId(null), 2000);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+    // jumpNonce 變動代表一次新的跳轉(即使目標同一則也重觸發)。
+  }, [jumpNonce, jumpToMessageId, messages]);
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -182,6 +205,7 @@ export function Thread({
             onForward={onForward}
             onScrollToMessage={scrollToMessage}
             bubbleRef={(el) => { bubbleRefs.current[m.id] = el; }}
+            highlighted={m.id === highlightId}
           />
         ))}
         <div ref={bottomRef} />

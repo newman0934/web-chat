@@ -104,8 +104,22 @@ async def search_messages(
     refs = await _build_conversation_refs(
         db, list({m.conversation_id for m in messages}), me_id
     )
+    # 批次取寄件者顯示名(群組成員不在 conversation ref 內,需另外帶)。
+    sender_ids = list({m.sender_id for m in messages})
+    sender_names: dict = {}
+    if sender_ids:
+        sender_names = {
+            u.id: u.display_name
+            for u in (
+                await db.execute(select(User).where(User.id.in_(sender_ids)))
+            ).scalars().all()
+        }
     items = [
-        SearchResultOut(message=mo, conversation=refs[m.conversation_id])
+        SearchResultOut(
+            message=mo,
+            conversation=refs[m.conversation_id],
+            sender_name=sender_names.get(m.sender_id, ""),
+        )
         for m, mo in zip(messages, message_outs)
     ]
     # 滿筆 → 給下一頁 cursor(最後一筆 created_at);未滿 → 無更多。

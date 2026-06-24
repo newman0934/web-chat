@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 
 import type { Contact, Conversation } from '../../../contracts';
 import type { PresenceMap } from '../presence';
+import { highlightParts, type SearchResultView } from '../search';
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -19,6 +20,31 @@ interface SidebarProps {
   notificationSlot?: ReactNode;
   /** 好友線上狀態（user_id → state）；1對1 對話列據此顯示綠/灰點。 */
   presence?: PresenceMap;
+  // ---- 訊息搜尋 ----
+  /** 目前搜尋關鍵字（受控）；非空時側欄改顯示搜尋結果。 */
+  searchQuery?: string;
+  onSearchChange?: (q: string) => void;
+  searchResults?: SearchResultView[];
+  searchLoading?: boolean;
+  searchHasMore?: boolean;
+  onSearchMore?: () => void;
+  /** 點搜尋結果：切到該對話並跳轉到該訊息。 */
+  onPickResult?: (conversationId: string, messageId: string) => void;
+}
+
+/** 搜尋結果片段:命中關鍵字以 <mark> 高亮。 */
+function Snippet({ text, query }: { text: string; query: string }) {
+  return (
+    <>
+      {highlightParts(text, query).map((p, i) =>
+        p.hit ? (
+          <mark key={i} className="bg-yellow-200">{p.text}</mark>
+        ) : (
+          <span key={i}>{p.text}</span>
+        ),
+      )}
+    </>
+  );
 }
 
 /** 線上狀態小圓點：綠=在線、灰=離線。 */
@@ -48,7 +74,15 @@ export function Sidebar({
   onLogout,
   notificationSlot,
   presence = {},
+  searchQuery = '',
+  onSearchChange,
+  searchResults = [],
+  searchLoading = false,
+  searchHasMore = false,
+  onSearchMore,
+  onPickResult,
 }: SidebarProps) {
+  const searching = searchQuery.trim().length > 0;
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -121,6 +155,17 @@ export function Sidebar({
           </button>
         </div>
       </header>
+
+      <div className="border-b border-slate-200 p-4">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => onSearchChange?.(e.target.value)}
+          placeholder="🔍 搜尋訊息"
+          aria-label="搜尋訊息"
+          className="input w-full"
+        />
+      </div>
 
       <form onSubmit={submit} className="space-y-2 border-b border-slate-200 p-4">
         <label className="block text-sm font-medium text-slate-600">用 email 加好友</label>
@@ -207,6 +252,49 @@ export function Sidebar({
         )}
       </div>
 
+      {searching ? (
+        <div className="flex-1 overflow-y-auto" data-testid="search-results">
+          {searchLoading && searchResults.length === 0 ? (
+            <p className="p-4 text-sm text-slate-400">搜尋中…</p>
+          ) : searchResults.length === 0 ? (
+            <p className="p-4 text-sm text-slate-400">找不到符合的訊息。</p>
+          ) : (
+            <ul>
+              {searchResults.map((r) => (
+                <li key={r.messageId}>
+                  <button
+                    onClick={() => onPickResult?.(r.conversationId, r.messageId)}
+                    className="flex w-full flex-col gap-0.5 px-4 py-3 text-left hover:bg-slate-50"
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate font-medium text-slate-800">
+                        {r.conversationTitle}
+                      </span>
+                      <span className="shrink-0 text-xs text-slate-400">
+                        {new Date(r.createdAt).toLocaleDateString()}
+                      </span>
+                    </span>
+                    <span className="text-xs text-slate-500">{r.senderName}</span>
+                    <span className="truncate text-sm text-slate-600">
+                      <Snippet text={r.content} query={searchQuery} />
+                    </span>
+                  </button>
+                </li>
+              ))}
+              {searchHasMore && (
+                <li className="p-3 text-center">
+                  <button
+                    onClick={onSearchMore}
+                    className="rounded-full bg-white px-4 py-1 text-sm text-indigo-600 shadow hover:bg-indigo-50"
+                  >
+                    載入更多結果
+                  </button>
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
+      ) : (
       <div className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (
           <p className="p-4 text-sm text-slate-400">還沒有對話，先加個好友吧。</p>
@@ -247,6 +335,7 @@ export function Sidebar({
           </ul>
         )}
       </div>
+      )}
 
       <footer className="border-t border-slate-200 p-3 text-xs text-slate-400">
         連線狀態：{socketStatusLabel(socketStatus)}

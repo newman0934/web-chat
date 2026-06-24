@@ -113,6 +113,29 @@ export interface GroupCreateRequest {
   member_user_ids: string[];
 }
 
+// ---- 訊息搜尋 ----
+
+/** 搜尋結果附帶的對話精簡資訊。 */
+export interface ConversationRef {
+  id: string;
+  type: 'direct' | 'group';
+  name: string | null;
+  other_user: CurrentUser | null;
+}
+
+export interface SearchResult {
+  message: Message;
+  conversation: ConversationRef;
+  /** 寄件者顯示名（群組成員不在 conversation 內，故獨立帶上）。 */
+  sender_name: string;
+}
+
+export interface SearchResponse {
+  items: SearchResult[];
+  /** 下一頁游標（最後一筆 created_at）；無更多為 null。 */
+  next_before: string | null;
+}
+
 // ---- 站內通知 ----
 
 export type NotificationType = 'reply' | 'reaction' | 'forward';
