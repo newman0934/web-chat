@@ -12,6 +12,7 @@ from app.routers import (
     group_management,
     messages,
     notifications,
+    search,
     uploads,
     users,
 )
@@ -44,6 +45,7 @@ app.include_router(group_management.router)
 app.include_router(messages.router)
 app.include_router(uploads.router)
 app.include_router(notifications.router)
+app.include_router(search.router)
 app.include_router(ws_router.router)
 
 

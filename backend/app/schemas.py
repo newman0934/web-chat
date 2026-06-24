@@ -164,6 +164,30 @@ class ConversationOut(BaseModel):
     roles: dict[uuid.UUID, str] = Field(default_factory=dict)
 
 
+# ---- 搜尋 ----
+class ConversationRefOut(BaseModel):
+    """搜尋結果附帶的對話精簡資訊，供前端顯示「來自哪個對話」。"""
+    id: uuid.UUID
+    type: str
+    name: str | None = None
+    other_user: UserOut | None = None  # direct 才有（對方）
+
+
+class SearchResultOut(BaseModel):
+    message: MessageOut
+    conversation: ConversationRefOut
+
+
+class SearchResponseOut(BaseModel):
+    items: list[SearchResultOut] = Field(default_factory=list)
+    # 滿筆時為最後一筆的 created_at（下一頁 cursor），否則 null。
+    next_before: datetime | None = None
+
+    @field_serializer("next_before")
+    def _ser_next_before(self, dt: datetime | None) -> str | None:
+        return _utc_iso(dt)
+
+
 # ---- notifications ----
 class NotificationActorOut(BaseModel):
     id: uuid.UUID

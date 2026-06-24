@@ -71,6 +71,8 @@ async def create_group(
 async def list_messages(
     conversation_id: uuid.UUID,
     before: datetime | None = Query(default=None),
+    after: datetime | None = Query(default=None),
+    around: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=30, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -79,6 +81,53 @@ async def list_messages(
     if conv is None:
         raise HTTPException(status_code=404, detail="查無此對話或無權限")
 
+    # before / after / around 三者互斥(各代表不同的取頁方向)。
+    if sum(x is not None for x in (before, after, around)) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="before / after / around 只能擇一",
+        )
+
+    if around is not None:
+        # 以該訊息為中心的視窗:含該則 + 較舊鄰居,加上較新鄰居。
+        target = await db.get(Message, around)
+        if target is None or target.conversation_id != conversation_id:
+            raise HTTPException(status_code=404, detail="查無此訊息或無權限")
+        k = limit // 2
+        older = list((await db.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.created_at <= target.created_at,
+            )
+            .order_by(Message.created_at.desc())
+            .limit(limit - k)
+        )).scalars().all())
+        older.reverse()  # 升序,target 落在這段最後
+        newer = list((await db.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.created_at > target.created_at,
+            )
+            .order_by(Message.created_at.asc())
+            .limit(k)
+        )).scalars().all())
+        messages = older + newer
+        return await serialize_messages_out(db, messages)
+
+    if after is not None:
+        # 向下分頁:較新的訊息,升序。
+        after = coerce_cursor(db, after)
+        result = await db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id, Message.created_at > after)
+            .order_by(Message.created_at.asc())
+            .limit(limit)
+        )
+        return await serialize_messages_out(db, list(result.scalars().all()))
+
+    # 預設 / before:較舊的訊息,取 desc 再反轉成升序回傳。
     before = coerce_cursor(db, before)
     stmt = select(Message).where(Message.conversation_id == conversation_id)
     if before is not None:
