@@ -32,13 +32,16 @@ test("MR-09 撤回後顯示系統訊息", async ({ page }) => {
   const recalled = page.getByTestId("recalled-message");
 
   // 送出 → 等到出現「撤回」鈕(代表訊息已 sent 且在時窗內)。
+  // dev/StrictMode 下 send() 可能落空 → 訊息變「未送出」;此時點重試,直到成功 sent。
   await expect(async () => {
     if ((await bubble.count()) === 0) {
       await input.fill(MSG);
       await send.click();
+    } else if ((await bubble.getByText("未送出，點擊重試").count()) > 0) {
+      await bubble.getByText("未送出，點擊重試").click();
     }
     await expect(bubble.getByRole("button", { name: "撤回" })).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 20000 });
+  }).toPass({ timeout: 30000 });
 
   // 點「撤回」直到該訊息變成系統訊息。
   await expect(async () => {
