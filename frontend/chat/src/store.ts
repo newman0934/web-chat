@@ -24,6 +24,7 @@ import {
   type ChatMessage,
 } from './messageStore';
 import { applyMarkRead, upsertNotification } from './notifications';
+import { addPin, removePin } from './pins';
 import { applyPresence, presenceFromContacts, type PresenceMap } from './presence';
 
 type PresenceEvent = Extract<ServerWsMessage, { type: 'presence' }>;
@@ -38,6 +39,8 @@ interface ChatState {
   contacts: Contact[];
   /** 好友線上狀態:user_id → {online, last_seen_at}。 */
   presence: PresenceMap;
+  /** conversationId → 釘選訊息清單（pinned_at 由新到舊）。 */
+  pins: Record<string, Message[]>;
 
   // ---- 清單 / 選取 ----
   setConversations: (conversations: Conversation[]) => void;
@@ -73,6 +76,14 @@ interface ChatState {
   /** 收到 message_updated 事件：依 id 取代該對話內對應訊息。 */
   updateMessage: (message: Message) => void;
 
+  // ---- 訊息置頂 ----
+  /** 開啟對話時由 REST 載入釘選清單。 */
+  setPins: (conversationId: string, pins: Message[]) => void;
+  /** 收到 message_pinned：加入 pins（去重、最新在前）並更新該訊息 pinned 旗標。 */
+  applyPinned: (message: Message) => void;
+  /** 收到 message_unpinned：自 pins 移除並把該訊息 pinned 設為 false。 */
+  applyUnpinned: (conversationId: string, messageId: string) => void;
+
   /** 移除某對話（被踢/退出/群解散）；清掉其訊息與 hasMore，若為 active 則切回空畫面。 */
   removeConversation: (conversationId: string) => void;
 
@@ -98,6 +109,7 @@ const initialState = {
   hasMore: {} as Record<string, boolean>,
   contacts: [] as Contact[],
   presence: {} as PresenceMap,
+  pins: {} as Record<string, Message[]>,
   notifications: [] as Notification[],
   unreadCount: 0,
 };
@@ -223,6 +235,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const list = s.messages[convId];
       if (!list) return s;
       return { messages: { ...s.messages, [convId]: applyMessageUpdate(list, message) } };
+    }),
+
+  setPins: (conversationId, pins) =>
+    set((s) => ({ pins: { ...s.pins, [conversationId]: pins } })),
+
+  applyPinned: (message) =>
+    set((s) => {
+      const convId = message.conversation_id;
+      const list = s.messages[convId];
+      return {
+        pins: { ...s.pins, [convId]: addPin(s.pins[convId] ?? [], message) },
+        messages: list
+          ? { ...s.messages, [convId]: applyMessageUpdate(list, message) }
+          : s.messages,
+      };
+    }),
+
+  applyUnpinned: (conversationId, messageId) =>
+    set((s) => {
+      const list = s.messages[conversationId];
+      return {
+        pins: { ...s.pins, [conversationId]: removePin(s.pins[conversationId] ?? [], messageId) },
+        messages: list
+          ? {
+              ...s.messages,
+              [conversationId]: list.map((m) =>
+                m.id === messageId ? { ...m, pinned: false } : m,
+              ),
+            }
+          : s.messages,
+      };
     }),
 
   removeConversation: (conversationId) =>

@@ -42,6 +42,12 @@ export function dispatchServerMessage(msg: ServerWsMessage, deps: DispatchDeps):
     case 'message_updated':
       st.updateMessage(msg.message);
       break;
+    case 'message_pinned':
+      st.applyPinned(msg.message);
+      break;
+    case 'message_unpinned':
+      st.applyUnpinned(msg.conversation_id, msg.message_id);
+      break;
     case 'notification':
       st.addNotification(msg.notification);
       break;

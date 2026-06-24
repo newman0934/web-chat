@@ -75,6 +75,14 @@ export function useMessageActions(send: Send, api: ApiClient, currentUserId: str
     },
     [send],
   );
+  const pinMessage = useCallback(
+    (id: string) => { send({ type: 'pin', message_id: id }); },
+    [send],
+  );
+  const unpinMessage = useCallback(
+    (id: string) => { send({ type: 'unpin', message_id: id }); },
+    [send],
+  );
   const loadEditHistory = useCallback(
     (id: string): Promise<MessageVersion[]> => api.getMessageEdits(id),
     [api],
@@ -88,6 +96,8 @@ export function useMessageActions(send: Send, api: ApiClient, currentUserId: str
     toggleReaction,
     restoreMessage,
     forwardMessage,
+    pinMessage,
+    unpinMessage,
     loadEditHistory,
   };
 }

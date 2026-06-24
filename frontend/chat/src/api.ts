@@ -91,6 +91,11 @@ export class ApiClient {
     return this.req<SearchResponse>(`/search/messages?${params.toString()}`);
   }
 
+  /** 取得對話的釘選訊息清單（pinned_at 由新到舊）。 */
+  listPins(conversationId: string) {
+    return this.req<Message[]>(`/conversations/${conversationId}/pins`);
+  }
+
   /** 取得某訊息的編輯歷史（由舊到新，最後一筆為目前版本）。 */
   getMessageEdits(messageId: string) {
     return this.req<MessageVersion[]>(`/messages/${messageId}/edits`);

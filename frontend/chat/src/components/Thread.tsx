@@ -3,9 +3,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import type { Attachment, MessageVersion, ReplyPreview } from '../../../contracts';
+import type { Attachment, Message, MessageVersion, ReplyPreview } from '../../../contracts';
 import type { ChatMessage } from '../messageStore';
 import { MessageBubble } from './MessageBubble';
+import { PinnedBar } from './PinnedBar';
 
 /** 上傳結果：成功帶 attachment，失敗帶可顯示的訊息（如「檔案過大」）。 */
 export type UploadResult =
@@ -37,6 +38,13 @@ interface ThreadProps {
   /** 搜尋跳轉目標訊息 id；nonce 每次跳轉遞增以便重跳同一則。 */
   jumpToMessageId?: string | null;
   jumpNonce?: number;
+  // ---- 釘選 ----
+  pins?: Message[];
+  canPin?: boolean;
+  onPin?: (id: string) => void;
+  onUnpin?: (id: string) => void;
+  /** 釘選列點擊：跳轉到該訊息（沿用搜尋跳轉機制）。 */
+  onJumpToMessage?: (id: string) => void;
 }
 
 /** 右側對話視窗：訊息列表、載入更多、輸入框與送出。 */
@@ -63,6 +71,11 @@ export function Thread({
   onForward,
   jumpToMessageId = null,
   jumpNonce = 0,
+  pins = [],
+  canPin = false,
+  onPin,
+  onUnpin,
+  onJumpToMessage,
 }: ThreadProps) {
   const [draft, setDraft] = useState('');
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -174,6 +187,13 @@ export function Thread({
         </div>
       </header>
 
+      <PinnedBar
+        pins={pins}
+        canManage={canPin}
+        onJump={(id) => onJumpToMessage?.(id)}
+        onUnpin={(id) => onUnpin?.(id)}
+      />
+
       <div className="flex-1 space-y-2 overflow-y-auto px-6 py-4">
         {canLoadMore && (
           <div className="text-center">
@@ -206,6 +226,9 @@ export function Thread({
             onScrollToMessage={scrollToMessage}
             bubbleRef={(el) => { bubbleRefs.current[m.id] = el; }}
             highlighted={m.id === highlightId}
+            canPin={canPin}
+            onPin={onPin}
+            onUnpin={onUnpin}
           />
         ))}
         <div ref={bottomRef} />

@@ -91,6 +91,8 @@ export interface Message {
   deleted_at?: string | null;
   reactions: ReactionGroup[];
   kind?: 'user' | 'system';
+  /** 是否已釘選（置頂）。 */
+  pinned?: boolean;
   reply_to?: ReplyPreview | null;
   forwarded_from?: ForwardedFrom | null;
 }
@@ -172,6 +174,8 @@ export type ClientWsMessage =
   | { type: 'delete'; message_id: string }
   | { type: 'restore'; message_id: string }
   | { type: 'react'; message_id: string; emoji: string }
+  | { type: 'pin'; message_id: string }
+  | { type: 'unpin'; message_id: string }
   | { type: 'forward'; message_id: string; to_conversation_id: string }
   | { type: 'call_offer'; to_user_id: string; sdp: RTCSessionDescriptionInit }
   | { type: 'call_answer'; to_user_id: string; sdp: RTCSessionDescriptionInit }
@@ -186,6 +190,8 @@ export type ServerWsMessage =
   | { type: 'typing'; conversation_id: string; user_id: string }
   | { type: 'error'; reason: string; temp_id?: string }
   | { type: 'message_updated'; message: Message }
+  | { type: 'message_pinned'; message: Message }
+  | { type: 'message_unpinned'; conversation_id: string; message_id: string }
   | { type: 'call_offer'; from: CallFrom; sdp: RTCSessionDescriptionInit }
   | { type: 'call_answer'; from: CallFrom; sdp: RTCSessionDescriptionInit }
   | { type: 'call_ice'; from: CallFrom; candidate: RTCIceCandidateInit }

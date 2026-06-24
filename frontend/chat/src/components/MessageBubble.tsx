@@ -14,6 +14,7 @@ export function MessageBubble({
   message, mine, isGroup, senderName, memberNames, onRetry, attachmentUrl,
   currentUserId, onEdit, onDelete, onReact, onRestore, loadEditHistory,
   onReply, onForward, onScrollToMessage, bubbleRef, highlighted = false,
+  canPin = false, onPin, onUnpin,
 }: {
   message: ChatMessage; mine: boolean; isGroup: boolean;
   senderName?: string;
@@ -32,6 +33,10 @@ export function MessageBubble({
   bubbleRef: (el: HTMLDivElement | null) => void;
   /** 搜尋跳轉時暫時高亮命中訊息（數秒後由 Thread 清除）。 */
   highlighted?: boolean;
+  /** 是否可釘選/取消（依對話權限）。 */
+  canPin?: boolean;
+  onPin?: (id: string) => void;
+  onUnpin?: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -86,6 +91,9 @@ export function MessageBubble({
         )}
         {message.forwarded_from && (
           <p className="mb-1 text-xs text-slate-400">↪ 轉發自 {message.forwarded_from.display_name}</p>
+        )}
+        {message.pinned && (
+          <p className="mb-0.5 text-xs text-amber-600" data-testid="pinned-indicator">📌 已釘選</p>
         )}
         {message.reply_to && (
           <ReplyQuoteBlock
@@ -233,6 +241,27 @@ export function MessageBubble({
             >
               轉發
             </button>
+          )}
+          {canPin && (
+            message.pinned ? (
+              <button
+                type="button"
+                aria-label="取消釘選"
+                onClick={() => onUnpin?.(message.id)}
+                className="hover:opacity-100"
+              >
+                取消釘選
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label="釘選"
+                onClick={() => onPin?.(message.id)}
+                className="hover:opacity-100"
+              >
+                釘選
+              </button>
+            )
           )}
         </div>
       )}

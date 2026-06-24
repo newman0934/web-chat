@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ChatAppProps, SearchResult, ServerWsMessage } from '../../contracts';
 import { toSearchResultView } from './search';
+import { canPin } from './pins';
 import { ApiClient, ApiError, UnauthorizedError } from './api';
 import { CallOverlay } from './components/CallOverlay';
 import { ForwardPicker } from './components/ForwardPicker';
@@ -45,6 +46,7 @@ export default function ChatApp({
   const presence = useChatStore((s) => s.presence);
   const notifications = useChatStore((s) => s.notifications);
   const unreadCount = useChatStore((s) => s.unreadCount);
+  const pins = useChatStore((s) => s.pins);
 
   /** 從後端拉對話清單；401 時觸發登出。 */
   const loadConversations = useCallback(async () => {
@@ -135,8 +137,21 @@ export default function ChatApp({
     toggleReaction,
     restoreMessage,
     forwardMessage,
+    pinMessage,
+    unpinMessage,
     loadEditHistory,
   } = useMessageActions(wsSend, api, currentUser.id);
+
+  /** 載入某對話的釘選清單到 store。 */
+  const loadPins = useCallback(
+    (conversationId: string) => {
+      void api
+        .listPins(conversationId)
+        .then((p) => useChatStore.getState().setPins(conversationId, p))
+        .catch(() => {});
+    },
+    [api],
+  );
 
   /** 切換對話：必要時拉歷史、送 read 事件、清本地未讀數。 */
   const selectConversation = useCallback(
@@ -146,6 +161,7 @@ export default function ChatApp({
       if (!st.hasMessages(conversationId)) {
         await refreshMessages(conversationId);
       }
+      loadPins(conversationId);
       socketRef.current?.send({ type: 'read', conversation_id: conversationId });
       useChatStore.getState().clearUnread(conversationId);
       // 開啟對話即把指向它的通知標已讀（已讀的唯一來源）。
@@ -154,7 +170,7 @@ export default function ChatApp({
         .then((r) => useChatStore.getState().markConversationRead(conversationId, r.marked))
         .catch(() => {});
     },
-    [refreshMessages, api],
+    [refreshMessages, api, loadPins],
   );
 
   /** 向上分頁：以最早訊息的 created_at 為游標載入更早訊息。 */
@@ -303,6 +319,7 @@ export default function ChatApp({
         if (err instanceof UnauthorizedError) onLogout();
         return;
       }
+      loadPins(conversationId);
       socketRef.current?.send({ type: 'read', conversation_id: conversationId });
       useChatStore.getState().clearUnread(conversationId);
       void api
@@ -312,7 +329,7 @@ export default function ChatApp({
       setSearchQuery(''); // 收起搜尋,回對話清單
       setJump({ id: messageId, nonce: Date.now() });
     },
-    [api, onLogout],
+    [api, onLogout, loadPins],
   );
 
   const runGroupOp = useCallback(
@@ -403,6 +420,11 @@ export default function ChatApp({
           onForward={(m) => setForwarding(m.id)}
           jumpToMessageId={jump?.id ?? null}
           jumpNonce={jump?.nonce ?? 0}
+          pins={pins[activeId] ?? []}
+          canPin={activeConv ? canPin(activeConv, currentUser.id) : false}
+          onPin={pinMessage}
+          onUnpin={unpinMessage}
+          onJumpToMessage={(id) => jumpToMessage(activeId, id)}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center text-slate-400">
