@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     jwt_secret: str = DEFAULT_JWT_SECRET  # 正式環境務必以環境變數覆寫
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # token 有效時間（分鐘），預設 1 天
+    # 註冊速率限制：每來源 IP 在 window 秒內最多幾次（E2E/壓測可用環境變數調高以免誤擋）。
+    register_rate_limit_max: int = 20
+    register_rate_limit_window_seconds: int = 3600
     # CORS 允許來源以逗號分隔字串存放（環境變數友善），用時再切成 list。
     cors_origins: str = "http://localhost:5000,http://localhost:5001,http://localhost:5002"
     upload_dir: str = str(

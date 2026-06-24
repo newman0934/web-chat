@@ -72,6 +72,8 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         DATABASE_URL: `sqlite+aiosqlite:///${E2E_DB.replace(/\\/g, "/")}`,
+        // E2E 全部來自同一 IP、會註冊大量帳號;調高註冊限流上限以免誤觸 429。
+        REGISTER_RATE_LIMIT_MAX: "100000",
       },
     },
     {

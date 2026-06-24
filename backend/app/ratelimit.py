@@ -7,6 +7,8 @@
 import time
 from collections import defaultdict, deque
 
+from app.config import get_settings
+
 
 class SlidingWindowLimiter:
     """每個 key 在 window_seconds 內最多 max_events 次事件。"""
@@ -46,5 +48,10 @@ class SlidingWindowLimiter:
 # 登入失敗:每來源 IP 60 秒內最多 10 次,超過即回 429。
 login_limiter = SlidingWindowLimiter(max_events=10, window_seconds=60)
 
-# 註冊:每來源 IP 每小時最多 20 個帳號(每次嘗試都計入),擋自動化大量建帳號。
-register_limiter = SlidingWindowLimiter(max_events=20, window_seconds=3600)
+# 註冊:每來源 IP 每小時最多 N 個帳號(每次嘗試都計入),擋自動化大量建帳號。
+# 上限與視窗可由設定/環境變數調整(E2E 同一 runner IP 會註冊大量帳號,需調高免誤擋)。
+_settings = get_settings()
+register_limiter = SlidingWindowLimiter(
+    max_events=_settings.register_rate_limit_max,
+    window_seconds=_settings.register_rate_limit_window_seconds,
+)
