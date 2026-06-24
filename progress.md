@@ -223,17 +223,41 @@ SQLite + Postgres 雙環境綠）
 
 ---
 
+# 效能與正式環境整備（2026-06-24 後續）
+
+## 效能(N+1 全面清除)
+
+- `list_messages`:每則訊息原本 ~3-6 個查詢(附件/表情/已讀/回覆/轉發)→ `serialize_messages_out`
+  批次,查詢數固定。等價性測試 + SQLite/Postgres 雙驗。
+- 前端:收到 WS 訊息原本每則都重抓整份 `/conversations` → 改 store `applyIncomingToConversations`
+  就地更新(last_message/未讀/置頂),只有新對話才退回重抓。
+- `list_contacts`(逐位 `get_or_create`)與 `list_notifications`(每則 2 個 `db.get`)→ 各批次化。
+- 註:`attachment.message_id` 經查證已由 UniqueConstraint 建唯一索引,毋須再加(原誤判)。
+
+## 正式環境整備
+
+- **登入速率限制**:每來源 IP 60 秒內登入失敗 10 次 → 429(只記失敗;記憶體單程序,
+  見 `app/ratelimit.py`),降低暴力破解速度。
+- **CI**:`.github/workflows/ci.yml`(backend pytest + 前端三 app typecheck/vitest)。
+  ⚠️ repo 目前無 git remote,推上 GitHub 後才會實際執行。
+- **請求記錄**:HTTP middleware 記 method/path/status/耗時,**刻意不含 query**
+  (`?token=` 不進自家 log;見 `app/logging_config.py`)。
+
+驗證:backend **150 passed**、chat vitest **117 passed**、三 app tsc 乾淨。
+
+---
+
 # 測試狀態
 
 ## Backend
 
-- Pytest：PASS（139）
+- Pytest：PASS（150）
 
 ---
 
 ## Frontend
 
-- Vitest：PASS（chat 111）
+- Vitest：PASS（chat 117）
 - TypeScript Type Check：PASS（chat / shell / auth）
 
 ---
@@ -317,13 +341,8 @@ React Router v7 Future Flag Warning
 
 ## P2
 
-建立 GitHub Actions。
-
-包含：
-
-- Backend CI
-- Frontend CI
-- Playwright E2E
+GitHub Actions:✅ workflow 已備(`.github/workflows/ci.yml`,Backend CI + Frontend CI)。
+待加 git remote / 推上 GitHub 才會實際執行;Playwright E2E 較重,日後可另開 job。
 
 ---
 
