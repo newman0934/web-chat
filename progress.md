@@ -326,24 +326,44 @@ SQLite + Postgres 雙環境搜尋結果一致。
 
 ---
 
+# 訊息置頂（message-pin,SDD 全流程,2026-06-24）
+
+規格見 `docs/superpowers/specs/message-pin/`。
+
+- **資料模型**:`messages.pinned_at`(migration 0012 + `(conversation_id, pinned_at)` 索引);
+  `MessageOut.pinned`。
+- **後端**:WS `pin`/`unpin`(direct 雙方/group 僅 admin、上限 10、冪等)→ 廣播
+  `message_pinned`/`message_unpinned`;`GET /conversations/{id}/pins`(非成員 404、批次序列化);
+  刪除已釘訊息自動解釘並廣播。`services/pins.py`(can_pin/count_pins/list_pins)。
+- **前端**:側欄無關;Thread 頂部釘選列(最新 + 共 N 則 + 展開 + 點擊沿用 around 跳轉高亮 / 取消),
+  泡泡動作加「釘選/取消釘選」(依 canPin)+ 📌;WS 事件即時更新。純函式 `pins.ts`
+  (canPin/pinnedBarView/addPin/removePin)。
+- **測試**:backend `test_pins`(13)+ `test_migration_0012`(1);chat `pins.test`(6);
+  e2e `pin-api`(10)+ `pin-ui`(1)。Postgres 另驗 list_pins 排序/count/can_pin。
+
+驗證:backend **190 passed**、chat vitest **133**、e2e **74**、三 app tsc 乾淨;
+SQLite + Postgres 雙環境一致。
+
+---
+
 # 測試狀態
 
 ## Backend
 
-- Pytest：PASS（175）
+- Pytest：PASS（190）
 
 ---
 
 ## Frontend
 
-- Vitest：PASS（chat 127、shell 8）
+- Vitest：PASS（chat 133、shell 8）
 - TypeScript Type Check：PASS（chat / shell / auth）
 
 ---
 
 ## E2E
 
-- Playwright：PASS（63 tests,於 GitHub e2e.yml workflow 跑全棧）
+- Playwright：PASS（74 tests,於 GitHub e2e.yml workflow 跑全棧）
 
 ---
 
