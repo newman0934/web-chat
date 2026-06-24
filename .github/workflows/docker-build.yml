@@ -1,0 +1,31 @@
+name: Docker build
+
+# 只在 Docker / 前後端原始碼相關變更時跑(純文件變更不必等映像建置)。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/docker-build.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/docker-build.yml"
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-images:
+    name: build all images (compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 建 backend 與三個前端映像(db 是 image: 不需建);驗證 Dockerfile 與 vite build 皆過。
+      - name: docker compose build
+        run: docker compose build
