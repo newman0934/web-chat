@@ -274,8 +274,11 @@ SQLite + Postgres 雙環境綠）
   擋自動化大量建帳號。
 - backend image Python 對齊 CI(3.11→**3.12**);`backend/.dockerignore` 補排除
   `tests/`、`uploads/`。
+- **修非 ASCII 檔名下載 500**:`Content-Disposition` 對中文等非 ASCII 檔名會
+  `UnicodeEncodeError`(header 僅 latin-1)→ 改 RFC 6266(`filename*=UTF-8''…` + ASCII
+  fallback),補中文檔名下載測試。
 
-驗證:backend **155 passed**、chat vitest 117、三 app tsc 乾淨;CI 與 Docker build 兩條
+驗證:backend **156 passed**、chat vitest 117、三 app tsc 乾淨;CI 與 Docker build 兩條
 workflow 於 GitHub 皆綠。
 
 ---
@@ -284,7 +287,7 @@ workflow 於 GitHub 皆綠。
 
 ## Backend
 
-- Pytest：PASS（155）
+- Pytest：PASS（156）
 
 ---
 
