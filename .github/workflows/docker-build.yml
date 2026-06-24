@@ -22,10 +22,24 @@ concurrency:
 
 jobs:
   build-images:
-    name: build all images (compose)
+    name: build all images (buildx bake)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # 建 backend 與三個前端映像(db 是 image: 不需建);驗證 Dockerfile 與 vite build 皆過。
-      - name: docker compose build
-        run: docker compose build
+      - uses: docker/setup-buildx-action@v3
+      # 用 buildx bake 從 compose 建 backend 與三個前端映像(db 是 image: 不需建)。
+      # 以 GitHub Actions cache 做 layer 快取:每個 target 各自 scope,
+      # 相依/原始碼沒變的 layer(npm ci、pip install、vite build)跨 run 重用。
+      - name: Build all images (bake + GHA cache)
+        uses: docker/bake-action@v5
+        with:
+          files: docker-compose.yml
+          set: |
+            backend.cache-from=type=gha,scope=backend
+            backend.cache-to=type=gha,scope=backend,mode=max
+            frontend-auth.cache-from=type=gha,scope=frontend-auth
+            frontend-auth.cache-to=type=gha,scope=frontend-auth,mode=max
+            frontend-chat.cache-from=type=gha,scope=frontend-chat
+            frontend-chat.cache-to=type=gha,scope=frontend-chat,mode=max
+            frontend-shell.cache-from=type=gha,scope=frontend-shell
+            frontend-shell.cache-to=type=gha,scope=frontend-shell,mode=max

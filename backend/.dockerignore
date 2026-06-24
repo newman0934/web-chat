@@ -9,3 +9,6 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 .env
+# 測試與本機上傳產物不需進 image(runtime 應掛 volume)
+tests/
+uploads/
