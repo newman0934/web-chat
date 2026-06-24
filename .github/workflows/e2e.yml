@@ -41,12 +41,13 @@ jobs:
           node-version: "20"
 
       # backend venv:e2e 的 webServer 直接以 .venv 內 python 起 uvicorn(走 e2e.db SQLite)。
+      # 裝 .[dev]:e2e 用 sqlite+aiosqlite,而 aiosqlite 在 dev 相依群(正式走 Postgres+asyncpg)。
       - name: Setup backend venv
         working-directory: backend
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install -e .
+          .venv/bin/python -m pip install -e ".[dev]"
 
       # 三個前端 app 都要相依:remote(auth/chat)build+preview、shell dev。
       - name: Install frontend deps
