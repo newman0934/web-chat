@@ -31,6 +31,35 @@ async def test_login_success_and_wrong_password(client, register_user):
     assert bad.status_code == 401
 
 
+async def test_login_rate_limited_after_failures(client, register_user):
+    await register_user("rl@example.com", "RL")
+    # 連續 10 次錯密碼 → 401;第 11 次起被速率限制擋下 → 429。
+    for _ in range(10):
+        r = await client.post(
+            "/auth/login", json={"email": "rl@example.com", "password": "wrong"}
+        )
+        assert r.status_code == 401
+    blocked = await client.post(
+        "/auth/login", json={"email": "rl@example.com", "password": "wrong"}
+    )
+    assert blocked.status_code == 429
+    # 被擋期間即使密碼正確也回 429(擋在驗證之前)。
+    even_correct = await client.post(
+        "/auth/login", json={"email": "rl@example.com", "password": "secret123"}
+    )
+    assert even_correct.status_code == 429
+
+
+async def test_login_success_does_not_count_toward_limit(client, register_user):
+    await register_user("ok@example.com", "OK")
+    # 成功登入多次不應被擋(只記失敗)。
+    for _ in range(15):
+        r = await client.post(
+            "/auth/login", json={"email": "ok@example.com", "password": "secret123"}
+        )
+        assert r.status_code == 200
+
+
 async def test_users_me_requires_token(client, register_user, auth_headers):
     token = await register_user("c@example.com", "Carol")
     unauth = await client.get("/users/me")

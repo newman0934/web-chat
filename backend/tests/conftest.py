@@ -51,16 +51,19 @@ def _reset_ws_singletons():
     manager 與 presence 快取是 module 級全域,跨測試會殘留上一個 TestClient 的(已關閉)
     websocket;後續測試的 presence 廣播若送到殘留連線會卡死。逐測重置確保隔離。
     """
+    from app.ratelimit import login_limiter
     from app.ws import router as ws_router
     from app.ws.manager import manager
 
-    manager._connections.clear()
-    manager._last_seen.clear()
-    ws_router._presence_cache.clear()
+    def _clear():
+        manager._connections.clear()
+        manager._last_seen.clear()
+        ws_router._presence_cache.clear()
+        login_limiter.reset()  # 測試共用 "testclient" IP,逐測清空避免跨測試累積登入失敗
+
+    _clear()
     yield
-    manager._connections.clear()
-    manager._last_seen.clear()
-    ws_router._presence_cache.clear()
+    _clear()
 
 
 @pytest.fixture
