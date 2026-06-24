@@ -1,6 +1,11 @@
 # chat-web
 
-Web 版即時通訊軟體：1對1 + **群組聊天**。前端採微前端（Module Federation），後端 FastAPI。
+Web 版即時通訊軟體：1對1 + 群組聊天、附件、訊息編輯/刪除/表情/回覆/轉發、WebRTC 語音視訊、
+站內通知、線上狀態。
+
+**技術棧**：前端 React 18 + Vite + **Module Federation**（shell host + auth/chat remotes,
+刻意採微前端作為學習目標）;後端 FastAPI + SQLAlchemy 2.0（async）+ WebSocket;
+資料庫 SQLite（開發）/ PostgreSQL（正式）;JWT 認證、bcrypt。
 
 設計文件（PRD）：[MVP（1對1）](docs/superpowers/specs/2026-06-19-chat-web-mvp-design.md)
 
@@ -45,49 +50,59 @@ chat-web/
 
 ## 前置需求
 
-- Node 18+（前端）
+- Node 20+（前端）
 - Python 3.11+（後端）
-- Docker（PostgreSQL；或自備本地 Postgres）
+- Docker（選用；僅在要用 Postgres 而非預設 SQLite 時需要）
 
 ## 啟動後端
 
-```bash
-# 1. 起 Postgres
-docker compose up -d db
+本地開發**預設用 SQLite**，免 Docker：
 
-# 2. 安裝相依與遷移
+```bash
 cd backend
-python -m venv .venv && . .venv/Scripts/activate   # Windows
+python -m venv .venv && . .venv/Scripts/activate          # Windows;macOS/Linux 用 source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env
-alembic upgrade head
-
-# 3. 起 API
-uvicorn app.main:app --reload --port 8000
+export DATABASE_URL="sqlite+aiosqlite:///$(pwd)/dev.db"    # Windows PowerShell: $env:DATABASE_URL=...
+python -m alembic upgrade head
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
-後端測試：
-
-```bash
-cd backend
-pytest
-```
+要用 Postgres（接近正式環境）時，改 `DATABASE_URL`（見 `.env.example`）或 `docker compose up -d db`。
 
 ## 啟動前端
 
-三個 app 各自獨立。先起 remote，再起 host。
+> ⚠️ **Module Federation 關鍵**：remote（auth / chat）**不能用 `npm run dev`** ——
+> dev server 不產生 `remoteEntry.js`，host 會 404。remote 必須 `build` 後 `preview`；
+> 只有 host（shell）可以跑 dev。**改了 remote 要重新 build。**
 
 ```bash
-# auth remote
-cd frontend/auth && npm install && npm run dev   # :5001
+# auth remote（:5001）
+cd frontend/auth && npm install && npm run build && npm run preview
 
-# chat remote
-cd frontend/chat && npm install && npm run dev    # :5002
+# chat remote（:5002）
+cd frontend/chat && npm install && npm run build && npm run preview
 
-# shell host
-cd frontend/shell && npm install && npm run dev   # :5000
+# shell host（:5000）
+cd frontend/shell && npm install && npm run dev
 ```
 
 開 http://localhost:5000 。
+
+## 測試
+
+```bash
+# 後端(檔案型 SQLite,免外部服務)
+cd backend && python -m pytest
+
+# 前端(各 app)
+cd frontend/<app> && npm run test        # vitest
+cd frontend/<app> && npm run typecheck   # tsc --noEmit
+
+# E2E(Playwright,需起整套;webServer 會自動 build+preview)
+cd e2e && npx playwright test
+```
+
+CI(`.github/workflows/ci.yml`)在 push main / PR 時跑 backend pytest 與前端三 app
+typecheck/vitest。
 
 > 微前端的「獨立部署」展示：`npm run build` 各 remote 產生 `remoteEntry.js`，shell 透過 URL 載入。
