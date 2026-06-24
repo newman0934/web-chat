@@ -247,11 +247,44 @@ SQLite + Postgres 雙環境綠）
 
 ---
 
+# GitHub 上線 / Docker / 安全強化（2026-06-24 後續）
+
+## 上 GitHub 與 CI 實跑
+
+- 接上 remote `git@github.com:newman0934/web-chat.git`,以 **main 為主**;`feat/group-chat`
+  已刪除。每次 push main / PR 觸發 CI(ci.yml,backend pytest + 前端三 app typecheck/vitest),
+  皆綠。
+
+## 前端 Docker 化 + Docker build CI
+
+- 三個 micro-frontend(shell/auth/chat)共用 `frontend/Dockerfile`(以 `APP` build arg
+  區分),build context 取 `frontend/` 以解析 `../contracts`。remote 必須 build+preview
+  (`vite preview` 才產生 `remoteEntry.js`);`VITE_*` 於 build 時內聯。`docker-compose.yml`
+  一鍵起全套(db + backend + 三前端)。
+- `.github/workflows/docker-build.yml`:path-filtered(只在 Docker/前後端原始碼變更時跑),
+  以 **buildx bake + GitHub Actions layer cache**(每 target 各自 scope)建四個映像。
+  cache 命中後 Docker build 從數分鐘降至 **~36 秒**。
+
+## 安全強化(正式環境整備 II)
+
+- **JWT 預設密鑰啟動防護**:`config.ensure_secure()` 於 `environment=production` 仍用預設
+  `dev-secret-change-me` 時讓 App **啟動失敗**(否則 token 可被偽造、帳號接管);main.py
+  啟動時呼叫。`ENVIRONMENT` 預設 development,本機/compose 不受影響。
+- **註冊端點限流**:`/auth/register` 加 `register_limiter`(每 IP 每小時 20 次,每次計入),
+  擋自動化大量建帳號。
+- backend image Python 對齊 CI(3.11→**3.12**);`backend/.dockerignore` 補排除
+  `tests/`、`uploads/`。
+
+驗證:backend **155 passed**、chat vitest 117、三 app tsc 乾淨;CI 與 Docker build 兩條
+workflow 於 GitHub 皆綠。
+
+---
+
 # 測試狀態
 
 ## Backend
 
-- Pytest：PASS（150）
+- Pytest：PASS（155）
 
 ---
 
@@ -270,48 +303,25 @@ SQLite + Postgres 雙環境綠）
 
 ## Docker
 
-- Docker Compose：PASS
+- Docker Compose：PASS（db + backend + 三前端一鍵起）
+- Docker Build（CI,buildx bake + GHA cache）：PASS
 - Postgres Migration：PASS
 
 ---
 
 # 分支狀態
 
-## main
+## main（唯一主分支）
 
-已含全部功能(MVP + 群組 / 附件 / 訊息動作 / 群組管理 / 通話 / 通知 / 線上狀態)
-與本輪重構優化。`feat/group-chat` 已合併回 main,兩者目前指向同一 commit。
+已含全部功能(MVP + 群組 / 附件 / 訊息動作 / 群組管理 / 通話 / 通知 / 線上狀態)、
+重構優化、Docker 化與安全強化。已接 GitHub remote
+`git@github.com:newman0934/web-chat.git`,後續開發以 main 為主。
 
----
-
-## feat/group-chat
-
-長期整合分支,與 main 同步(同一 commit)。後續開發在此或 main 皆可。
+`feat/group-chat` 已合併並**刪除**。
 
 ---
 
 # 已知問題
-
-## Medium
-
-React Router v7 Future Flag Warning
-
-影響：
-
-無功能影響。
-
-建議：
-
-```tsx
-<BrowserRouter
-  future={{
-    v7_startTransition: true,
-    v7_relativeSplatPath: true
-  }}
->
-```
-
----
 
 ## Low
 
@@ -326,6 +336,8 @@ React Router v7 Future Flag Warning
 > 已解決(2026-06-24):emoji-mart Bundle 偏大 → 已改 React.lazy 動態載入;
 > Conversation 查詢 N+1 → 已批次化(serialize_conversations_out);
 > 上傳記憶體耗盡風險 → 已改分塊讀取。詳見「重構與優化（2026-06-24）」。
+> React Router v7 Future Flag Warning → 已於 `shell/src/main.tsx` 設 `v7_startTransition`
+> 與 `v7_relativeSplatPath`,警告消除。
 
 ---
 
@@ -333,7 +345,8 @@ React Router v7 Future Flag Warning
 
 ## P1
 
-✅ `feat/group-chat → main` 已合併(2026-06-24)。
+✅ `feat/group-chat → main` 已合併並刪除;✅ 已上 GitHub(remote
+`git@github.com:newman0934/web-chat.git`,以 main 為主)。
 
 接著可建立正式 Release / 打 tag。
 
@@ -341,8 +354,12 @@ React Router v7 Future Flag Warning
 
 ## P2
 
-GitHub Actions:✅ workflow 已備(`.github/workflows/ci.yml`,Backend CI + Frontend CI)。
-待加 git remote / 推上 GitHub 才會實際執行;Playwright E2E 較重,日後可另開 job。
+✅ GitHub Actions 已實跑:CI(backend pytest + 前端三 app)與 Docker build
+(buildx bake + GHA cache)兩條 workflow 於 push main / PR 觸發,皆綠。
+Playwright E2E 較重,日後可另開 job。
+
+正式部署前提醒:設 `ENVIRONMENT=production` 並以環境變數覆寫 `JWT_SECRET`
+(否則 `ensure_secure()` 會擋下啟動)。
 
 ---
 
