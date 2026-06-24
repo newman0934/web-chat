@@ -367,24 +367,45 @@ SQLite + Postgres 雙環境一致。
 
 ---
 
+# 多附件（message-attachments-multi,SDD 全流程,2026-06-25）
+
+規格見 `docs/superpowers/specs/message-attachments-multi/`。一則訊息可夾帶多個附件。
+
+- **限制**:一則最多 **5 個**、每檔 **≤1MB**(上傳端,從 10MB 下調)、整則總量 **≤10MB**(送訊端)。
+- **資料模型**:`attachments` 移除 `message_id` 唯一約束、加 `position`(顯示順序);migration 0014
+  (SQLite `batch_alter_table`)。`MessageOut.attachment` → **`attachments` 陣列**。
+- **後端**:WS `attachment_id` → **`attachment_ids`**(數量/歸屬/未綁定/去重/總量驗證,error 分類);
+  序列化批次撈多附件、依 position 保序;轉發複製全部、撤回/刪除清空全部;reply 預覽 has_attachment
+  改「有任一附件」。
+- **前端**:`attachments.ts` `validateAttachments` 純函式;Thread 檔案 input `multiple` + 待送清單
+  (即時驗證、可逐一移除);MessageBubble 圖片格狀 + 檔案下載列;契約/optimistic 改陣列。
+- **測試**:backend `test_attachments_multi`(9)+ `test_migration_0014`(1)+ 更新既有上傳/轉發/撤回/
+  批次測試為陣列;chat `attachments.test`(5);e2e `attachments-multi-api`(6)+ `-ui`(1)。
+  Postgres 另驗 position 排序序列化。
+
+驗證:backend **209 passed**、chat vitest **144**、e2e **89**、三 app tsc 乾淨;
+SQLite + Postgres 雙環境一致。
+
+---
+
 # 測試狀態
 
 ## Backend
 
-- Pytest：PASS（200）
+- Pytest：PASS（209）
 
 ---
 
 ## Frontend
 
-- Vitest：PASS（chat 139、shell 8）
+- Vitest：PASS（chat 144、shell 8）
 - TypeScript Type Check：PASS（chat / shell / auth）
 
 ---
 
 ## E2E
 
-- Playwright：PASS（82 tests,於 GitHub e2e.yml workflow 跑全棧）
+- Playwright：PASS（89 tests,於 GitHub e2e.yml workflow 跑全棧）
 
 ---
 
