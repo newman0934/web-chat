@@ -119,6 +119,7 @@ class MessageOut(BaseModel):
     reactions: list[ReactionGroupOut] = Field(default_factory=list)
     kind: str = "user"
     pinned: bool = False
+    recalled: bool = False
     reply_to: ReplyPreviewOut | None = None
     forwarded_from: ForwardedFromOut | None = None
 

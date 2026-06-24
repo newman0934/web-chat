@@ -95,6 +95,7 @@ async def search_messages(
         .where(
             Message.conversation_id.in_(my_convs),
             Message.deleted_at.is_(None),
+            Message.recalled_at.is_(None),  # 已撤回不納入搜尋
             cond,
         )
     )

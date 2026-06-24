@@ -40,6 +40,10 @@ class Message(Base):
     pinned_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 撤回時間;None = 未撤回。recalled = recalled_at IS NOT NULL(不可復原)。
+    recalled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     kind: Mapped[str] = mapped_column(
         String(16), nullable=False, default="user", server_default="user"
     )

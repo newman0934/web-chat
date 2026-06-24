@@ -245,7 +245,8 @@ async def build_reply_preview(db: AsyncSession, message: Message) -> dict | None
     if orig is None:
         # FK SET NULL 後 id 已被清空，或列已被硬刪（不在正常流程中，但防禦）
         return None
-    deleted = orig.deleted_at is not None
+    # 原訊息已刪除或已撤回:引用塊一律遮蔽。
+    deleted = orig.deleted_at is not None or orig.recalled_at is not None
     content = "" if deleted else orig.content
     has_attachment = (
         (not deleted)

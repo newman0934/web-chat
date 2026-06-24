@@ -49,8 +49,10 @@ async def serialize_message_out(
     read_count_value 給定時直接採用（如剛送出的新訊息固定為 0，省一次查詢）；None 則查詢。
     """
     deleted = m.deleted_at is not None
-    att = None if deleted else await get_attachment_for_message(db, m.id)
-    groups = [] if deleted else await get_reaction_groups(db, m.id)
+    recalled = m.recalled_at is not None
+    masked = deleted or recalled  # 已刪除或已撤回:內容/附件/表情一律遮蔽
+    att = None if masked else await get_attachment_for_message(db, m.id)
+    groups = [] if masked else await get_reaction_groups(db, m.id)
     # reply_to / forwarded_from:helper 回傳的 dict 內 uuid 欄位保留原生 uuid.UUID;
     # Pydantic 可直接用 uuid.UUID 填入 uuid 欄位。
     reply_to_d = await build_reply_preview(db, m)
@@ -58,7 +60,7 @@ async def serialize_message_out(
     rc = read_count_value if read_count_value is not None else await read_count(db, m.id)
     return MessageOut(
         id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
-        content="" if deleted else m.content, created_at=m.created_at,
+        content="" if masked else m.content, created_at=m.created_at,
         read_count=rc,
         attachment=AttachmentOut.model_validate(att) if att else None,
         edited_at=m.edited_at,
@@ -67,6 +69,7 @@ async def serialize_message_out(
         reactions=groups,
         kind=m.kind,
         pinned=m.pinned_at is not None,
+        recalled=recalled,
         reply_to=ReplyPreviewOut(**reply_to_d) if reply_to_d else None,
         forwarded_from=ForwardedFromOut(**forwarded_from_d) if forwarded_from_d else None,
     )
@@ -137,13 +140,16 @@ async def serialize_messages_out(db: AsyncSession, messages: list[Message]):
     out = []
     for m in messages:
         deleted = m.deleted_at is not None
-        att = None if deleted else att_by_msg.get(m.id)
-        groups = [] if deleted else reactions_by_msg.get(m.id, [])
+        recalled = m.recalled_at is not None
+        masked = deleted or recalled
+        att = None if masked else att_by_msg.get(m.id)
+        groups = [] if masked else reactions_by_msg.get(m.id, [])
         reply_to_d = None
         if m.reply_to_message_id is not None:
             orig = reply_msgs.get(m.reply_to_message_id)
             if orig is not None:
-                odel = orig.deleted_at is not None
+                # 被回覆原訊息若已刪除或已撤回,引用塊一律遮蔽。
+                odel = orig.deleted_at is not None or orig.recalled_at is not None
                 reply_to_d = {
                     "id": orig.id,
                     "sender_id": orig.sender_id,
@@ -158,7 +164,7 @@ async def serialize_messages_out(db: AsyncSession, messages: list[Message]):
                 forwarded_from_d = {"id": u.id, "display_name": u.display_name}
         out.append(MessageOut(
             id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
-            content="" if deleted else m.content, created_at=m.created_at,
+            content="" if masked else m.content, created_at=m.created_at,
             read_count=rc_by_msg.get(m.id, 0),
             attachment=AttachmentOut.model_validate(att) if att else None,
             edited_at=m.edited_at,
@@ -167,6 +173,7 @@ async def serialize_messages_out(db: AsyncSession, messages: list[Message]):
             reactions=groups,
             kind=m.kind,
             pinned=m.pinned_at is not None,
+            recalled=recalled,
             reply_to=ReplyPreviewOut(**reply_to_d) if reply_to_d else None,
             forwarded_from=ForwardedFromOut(**forwarded_from_d) if forwarded_from_d else None,
         ))

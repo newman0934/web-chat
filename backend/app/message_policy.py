@@ -5,6 +5,7 @@ from datetime import timedelta
 
 EDIT_WINDOW = timedelta(minutes=15)
 RESTORE_WINDOW = timedelta(minutes=5)
+RECALL_WINDOW = timedelta(minutes=2)
 
 _DISALLOWED_IN_EMOJI = re.compile(r"[A-Za-z0-9\s]")
 

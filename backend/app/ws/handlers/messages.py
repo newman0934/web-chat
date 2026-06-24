@@ -11,7 +11,7 @@ from fastapi import WebSocket
 from sqlalchemy import delete as sa_delete, select
 
 from app import db as db_module
-from app.message_policy import EDIT_WINDOW, RESTORE_WINDOW, is_valid_reaction_emoji
+from app.message_policy import EDIT_WINDOW, RECALL_WINDOW, RESTORE_WINDOW, is_valid_reaction_emoji
 from app.models import Attachment, Message, MessageEdit, Reaction, User
 from app.services.conversations import (
     get_attachment_for_message,
@@ -218,7 +218,12 @@ async def handle_edit(websocket, user, data):
         return
     async with db_module.SessionLocal() as db:
         msg = await db.get(Message, mid)
-        if msg is None or msg.sender_id != user.id or msg.deleted_at is not None:
+        if (
+            msg is None
+            or msg.sender_id != user.id
+            or msg.deleted_at is not None
+            or msg.recalled_at is not None
+        ):
             await websocket.send_json({"type": "error", "reason": "forbidden"})
             return
         now = datetime.now(timezone.utc)
@@ -242,7 +247,7 @@ async def handle_delete(websocket, user, data):
         return
     async with db_module.SessionLocal() as db:
         msg = await db.get(Message, mid)
-        if msg is None or msg.sender_id != user.id:
+        if msg is None or msg.sender_id != user.id or msg.recalled_at is not None:
             await websocket.send_json({"type": "error", "reason": "forbidden"})
             return
         was_pinned = msg.pinned_at is not None
@@ -276,6 +281,41 @@ async def handle_restore(websocket, user, data):
         await _broadcast_updated(db, msg.conversation_id, user.id, msg)
 
 
+async def handle_recall(websocket, user, data):
+    """撤回訊息(不可復原):寄件人本人、2 分內、未刪除/未撤回。
+    清空 content、移除附件與表情、自動解釘,廣播 message_updated(recalled=true)。
+    """
+    mid = parse_uuid(data.get("message_id"))
+    if mid is None:
+        await websocket.send_json({"type": "error", "reason": "invalid_payload"})
+        return
+    async with db_module.SessionLocal() as db:
+        msg = await db.get(Message, mid)
+        # 非本人 / 不存在 / 已刪除 / 已撤回 → forbidden(與 edit/delete 一致不洩漏)。
+        if (
+            msg is None
+            or msg.sender_id != user.id
+            or msg.deleted_at is not None
+            or msg.recalled_at is not None
+        ):
+            await websocket.send_json({"type": "error", "reason": "forbidden"})
+            return
+        if datetime.now(timezone.utc) - as_utc(msg.created_at) > RECALL_WINDOW:
+            await websocket.send_json({"type": "error", "reason": "recall_window_passed"})
+            return
+        was_pinned = msg.pinned_at is not None
+        msg.recalled_at = datetime.now(timezone.utc)
+        msg.content = ""
+        msg.pinned_at = None  # 撤回即自動解釘
+        await db.execute(sa_delete(Attachment).where(Attachment.message_id == msg.id))
+        await db.execute(sa_delete(Reaction).where(Reaction.message_id == msg.id))
+        await db.commit()
+        await db.refresh(msg)
+        await _broadcast_updated(db, msg.conversation_id, user.id, msg)
+        if was_pinned:
+            await _broadcast_unpinned(db, msg.conversation_id, user.id, msg.id)
+
+
 async def handle_forward(websocket: WebSocket, user: User, data: dict) -> None:
     """轉發訊息到目標對話：複製內容/附件、記原作者、廣播給目標成員（含發起人）。
 
@@ -301,8 +341,8 @@ async def handle_forward(websocket: WebSocket, user: User, data: dict) -> None:
             await websocket.send_json({"type": "error", "reason": "forbidden"})
             return
 
-        # 3. 不能轉發已軟刪訊息
-        if orig.deleted_at is not None:
+        # 3. 不能轉發已軟刪 / 已撤回訊息
+        if orig.deleted_at is not None or orig.recalled_at is not None:
             await websocket.send_json({"type": "error", "reason": "forbidden"})
             return
 
@@ -384,7 +424,7 @@ async def handle_pin(websocket, user, data):
         return
     async with db_module.SessionLocal() as db:
         msg = await db.get(Message, mid)
-        if msg is None or msg.deleted_at is not None:
+        if msg is None or msg.deleted_at is not None or msg.recalled_at is not None:
             await websocket.send_json({"type": "error", "reason": "not_found"})
             return
         conv = await get_conversation_for_member(db, msg.conversation_id, user.id)
@@ -444,7 +484,7 @@ async def handle_react(websocket, user, data):
             await websocket.send_json({"type": "error", "reason": "forbidden"})
             return
         conv = await get_conversation_for_member(db, msg.conversation_id, user.id)
-        if conv is None or msg.deleted_at is not None:
+        if conv is None or msg.deleted_at is not None or msg.recalled_at is not None:
             await websocket.send_json({"type": "error", "reason": "forbidden"})
             return
         existing = await db.execute(
