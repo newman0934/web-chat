@@ -61,9 +61,10 @@ export interface MessageVersion {
   created_at: string;
 }
 
-/** 編輯 / 還原時窗（毫秒）；與後端各一份，前端只用來決定按鈕顯隱。 */
+/** 編輯 / 還原 / 撤回時窗（毫秒）；與後端各一份，前端只用來決定按鈕顯隱。 */
 export const EDIT_WINDOW_MS = 15 * 60 * 1000;
 export const RESTORE_WINDOW_MS = 5 * 60 * 1000;
+export const RECALL_WINDOW_MS = 2 * 60 * 1000;
 
 export interface ReplyPreview {
   id: string;
@@ -93,6 +94,8 @@ export interface Message {
   kind?: 'user' | 'system';
   /** 是否已釘選（置頂）。 */
   pinned?: boolean;
+  /** 是否已撤回（不可復原；前端渲染為系統訊息）。 */
+  recalled?: boolean;
   reply_to?: ReplyPreview | null;
   forwarded_from?: ForwardedFrom | null;
 }
@@ -176,6 +179,7 @@ export type ClientWsMessage =
   | { type: 'react'; message_id: string; emoji: string }
   | { type: 'pin'; message_id: string }
   | { type: 'unpin'; message_id: string }
+  | { type: 'recall'; message_id: string }
   | { type: 'forward'; message_id: string; to_conversation_id: string }
   | { type: 'call_offer'; to_user_id: string; sdp: RTCSessionDescriptionInit }
   | { type: 'call_answer'; to_user_id: string; sdp: RTCSessionDescriptionInit }

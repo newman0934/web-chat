@@ -43,6 +43,7 @@ interface ThreadProps {
   canPin?: boolean;
   onPin?: (id: string) => void;
   onUnpin?: (id: string) => void;
+  onRecall?: (id: string) => void;
   /** 釘選列點擊：跳轉到該訊息（沿用搜尋跳轉機制）。 */
   onJumpToMessage?: (id: string) => void;
 }
@@ -75,6 +76,7 @@ export function Thread({
   canPin = false,
   onPin,
   onUnpin,
+  onRecall,
   onJumpToMessage,
 }: ThreadProps) {
   const [draft, setDraft] = useState('');
@@ -229,6 +231,7 @@ export function Thread({
             canPin={canPin}
             onPin={onPin}
             onUnpin={onUnpin}
+            onRecall={onRecall}
           />
         ))}
         <div ref={bottomRef} />

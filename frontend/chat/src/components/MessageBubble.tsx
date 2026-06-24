@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { EDIT_WINDOW_MS, RESTORE_WINDOW_MS } from '../../../contracts';
 import type { MessageVersion } from '../../../contracts';
 import type { ChatMessage } from '../messageStore';
+import { canRecall } from '../recall';
 import { EditHistoryPopover } from './EditHistoryPopover';
 import { ReactionPicker } from './ReactionPicker';
 import { ReplyQuoteBlock } from './ReplyQuoteBlock';
@@ -14,7 +15,7 @@ export function MessageBubble({
   message, mine, isGroup, senderName, memberNames, onRetry, attachmentUrl,
   currentUserId, onEdit, onDelete, onReact, onRestore, loadEditHistory,
   onReply, onForward, onScrollToMessage, bubbleRef, highlighted = false,
-  canPin = false, onPin, onUnpin,
+  canPin = false, onPin, onUnpin, onRecall,
 }: {
   message: ChatMessage; mine: boolean; isGroup: boolean;
   senderName?: string;
@@ -37,6 +38,7 @@ export function MessageBubble({
   canPin?: boolean;
   onPin?: (id: string) => void;
   onUnpin?: (id: string) => void;
+  onRecall?: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -48,6 +50,18 @@ export function MessageBubble({
       <div className="flex justify-center">
         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
           {message.content}
+        </span>
+      </div>
+    );
+  }
+
+  // 已撤回：換成置中系統訊息（不可復原，不顯示內容/動作）。
+  if (message.recalled) {
+    const who = mine ? '你' : (memberNames[message.sender_id] ?? senderName ?? '對方');
+    return (
+      <div className="flex justify-center" data-testid="recalled-message">
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
+          {who}撤回了一則訊息
         </span>
       </div>
     );
@@ -217,6 +231,14 @@ export function MessageBubble({
             >
               刪除
             </button>
+            {onRecall && canRecall(message, currentUserId) && (
+              <button
+                type="button"
+                onClick={() => onRecall(message.id)}
+              >
+                撤回
+              </button>
+            )}
           </div>
         )
       )}

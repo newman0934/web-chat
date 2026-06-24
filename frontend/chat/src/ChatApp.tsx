@@ -139,6 +139,7 @@ export default function ChatApp({
     forwardMessage,
     pinMessage,
     unpinMessage,
+    recallMessage,
     loadEditHistory,
   } = useMessageActions(wsSend, api, currentUser.id);
 
@@ -424,6 +425,7 @@ export default function ChatApp({
           canPin={activeConv ? canPin(activeConv, currentUser.id) : false}
           onPin={pinMessage}
           onUnpin={unpinMessage}
+          onRecall={recallMessage}
           onJumpToMessage={(id) => jumpToMessage(activeId, id)}
         />
       ) : (
