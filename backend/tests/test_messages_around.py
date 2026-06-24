@@ -65,6 +65,36 @@ async def test_around_first_message_boundary(client, session_factory, auth_heade
     assert contents == ["m0", "m1", "m2", "m3"]
 
 
+async def test_around_same_timestamp_includes_target(client, session_factory, auth_headers):
+    """同秒多則(created_at 相同 tie)時,around 視窗一定包含錨點訊息本身。"""
+    async with session_factory() as db:
+        alice = User(email=f"a-{uuid.uuid4().hex[:6]}@example.com", display_name="Alice", password_hash="x")
+        bob = User(email=f"b-{uuid.uuid4().hex[:6]}@example.com", display_name="Bob", password_hash="x")
+        db.add_all([alice, bob])
+        await db.flush()
+        conv = await get_or_create_direct_conversation(db, alice.id, bob.id)
+        msgs = []
+        for i in range(8):
+            m = Message(conversation_id=conv.id, sender_id=bob.id, content=f"tie{i}")
+            m.created_at = BASE  # 全部同一時間
+            db.add(m)
+            msgs.append(m)
+        await db.commit()
+        token = create_access_token(alice.id)
+        conv_id, ids = conv.id, [m.id for m in msgs]
+
+    # 對每一則當錨點,視窗(limit=4)都必須包含它自己。
+    for target_id in ids:
+        resp = await client.get(
+            f"/conversations/{conv_id}/messages",
+            params={"around": str(target_id), "limit": 4},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 200
+        returned = {m["id"] for m in resp.json()}
+        assert str(target_id) in returned
+
+
 async def test_around_404_nonexistent(client, session_factory, auth_headers):
     token, conv_id, _ = await _seed(session_factory)
     resp = await client.get(

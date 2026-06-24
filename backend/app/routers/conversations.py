@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
@@ -94,13 +94,21 @@ async def list_messages(
         if target is None or target.conversation_id != conversation_id:
             raise HTTPException(status_code=404, detail="查無此訊息或無權限")
         k = limit // 2
+        # 以 (created_at, id) keyset 取視窗:確保錨點訊息一定落在視窗內(即使同秒多則)。
+        # 錨點 created_at 用子查詢(欄對欄比較),避開秒級 created_at 與 datetime bind 微秒格式不一致。
+        anchor_created = (
+            select(Message.created_at).where(Message.id == around).scalar_subquery()
+        )
         older = list((await db.execute(
             select(Message)
             .where(
                 Message.conversation_id == conversation_id,
-                Message.created_at <= target.created_at,
+                or_(
+                    Message.created_at < anchor_created,
+                    and_(Message.created_at == anchor_created, Message.id <= around),
+                ),
             )
-            .order_by(Message.created_at.desc())
+            .order_by(Message.created_at.desc(), Message.id.desc())
             .limit(limit - k)
         )).scalars().all())
         older.reverse()  # 升序,target 落在這段最後
@@ -108,9 +116,12 @@ async def list_messages(
             select(Message)
             .where(
                 Message.conversation_id == conversation_id,
-                Message.created_at > target.created_at,
+                or_(
+                    Message.created_at > anchor_created,
+                    and_(Message.created_at == anchor_created, Message.id > around),
+                ),
             )
-            .order_by(Message.created_at.asc())
+            .order_by(Message.created_at.asc(), Message.id.asc())
             .limit(k)
         )).scalars().all())
         messages = older + newer
