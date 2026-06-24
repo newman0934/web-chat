@@ -17,9 +17,12 @@ import path from "path";
 
 // e2e 用的 SQLite 資料庫（每次跑前由 global-setup 清除重建）
 const E2E_DB = path.resolve(__dirname, "e2e.db");
+// venv 內 python 路徑跨平台：Windows 在 Scripts/python.exe，Linux/macOS（CI）在 bin/python。
 const BACKEND_VENV_PYTHON = path.resolve(
   __dirname,
-  "../backend/.venv/Scripts/python.exe"
+  process.platform === "win32"
+    ? "../backend/.venv/Scripts/python.exe"
+    : "../backend/.venv/bin/python"
 );
 const BACKEND_DIR = path.resolve(__dirname, "../backend");
 const AUTH_DIR = path.resolve(__dirname, "../frontend/auth");
