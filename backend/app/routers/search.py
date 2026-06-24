@@ -1,7 +1,5 @@
 """全域訊息搜尋端點。"""
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +15,7 @@ router = APIRouter(prefix="/search", tags=["search"])
 @router.get("/messages", response_model=SearchResponseOut)
 async def search_messages_endpoint(
     q: str = Query(min_length=1, max_length=100),
-    before: datetime | None = Query(default=None),
+    before: str | None = Query(default=None),  # 不透明複合游標 "created_at|id"
     limit: int = Query(default=20, ge=1, le=50),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

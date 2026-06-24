@@ -181,12 +181,9 @@ class SearchResultOut(BaseModel):
 
 class SearchResponseOut(BaseModel):
     items: list[SearchResultOut] = Field(default_factory=list)
-    # 滿筆時為最後一筆的 created_at（下一頁 cursor），否則 null。
-    next_before: datetime | None = None
-
-    @field_serializer("next_before")
-    def _ser_next_before(self, dt: datetime | None) -> str | None:
-        return _utc_iso(dt)
+    # 下一頁的不透明游標（錨點訊息 id，搭配 (created_at, id) keyset）；滿筆時提供，否則 null。
+    # 前端原樣回傳即可，不需解析。
+    next_before: str | None = None
 
 
 # ---- notifications ----

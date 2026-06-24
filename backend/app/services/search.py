@@ -4,9 +4,9 @@
 行為一致(見 spec NFR-1)。關鍵字的 LIKE 萬用字元 `% _ \\` 一律逸出,當一般字元比對。
 """
 
-from datetime import datetime
+import uuid
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Conversation, ConversationMember, Message, User
@@ -17,7 +17,6 @@ from app.schemas import (
     UserOut,
 )
 from app.services.conversation_serializers import serialize_messages_out
-from app.timeutils import coerce_cursor
 
 
 def escape_like(term: str) -> str:
@@ -73,10 +72,15 @@ async def search_messages(
     db: AsyncSession,
     me_id,
     q: str,
-    before: datetime | None,
+    before: str | None,
     limit: int,
 ) -> SearchResponseOut:
-    """跨我的對話搜尋訊息。回傳 SearchResponseOut(items + next_before)。"""
+    """跨我的對話搜尋訊息。回傳 SearchResponseOut(items + next_before)。
+
+    分頁採複合鍵 (created_at, id) 的 keyset,游標只帶錨點訊息 id:時間比較用「子查詢取錨點
+    created_at」與欄位逐欄比(欄對欄,同方言儲存格式),避免把 Python datetime bind 進 SQLite
+    時的 ".000000" 微秒格式與秒級 server_default 值不一致而漏/重(Postgres 無此問題)。
+    """
     pattern = f"%{escape_like(q).lower()}%"
     my_convs = select(ConversationMember.conversation_id).where(
         ConversationMember.user_id == me_id
@@ -94,10 +98,20 @@ async def search_messages(
             cond,
         )
     )
-    before = coerce_cursor(db, before)
-    if before is not None:
-        stmt = stmt.where(Message.created_at < before)
-    stmt = stmt.order_by(Message.created_at.desc()).limit(limit)
+    if before:
+        anchor_id = uuid.UUID(before)
+        # 子查詢取錨點訊息的 created_at(欄對欄比較,避開 datetime bind 的格式問題)。
+        anchor_created = (
+            select(Message.created_at).where(Message.id == anchor_id).scalar_subquery()
+        )
+        # (created_at, id) 嚴格小於錨點:早於該時間,或同時間但 id 較小。
+        stmt = stmt.where(
+            or_(
+                Message.created_at < anchor_created,
+                and_(Message.created_at == anchor_created, Message.id < anchor_id),
+            )
+        )
+    stmt = stmt.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit)
 
     messages = list((await db.execute(stmt)).scalars().all())
     message_outs = await serialize_messages_out(db, messages)
@@ -122,6 +136,6 @@ async def search_messages(
         )
         for m, mo in zip(messages, message_outs)
     ]
-    # 滿筆 → 給下一頁 cursor(最後一筆 created_at);未滿 → 無更多。
-    next_before = messages[-1].created_at if len(messages) == limit else None
+    # 滿筆 → 給下一頁游標(錨點 = 最後一筆的 id);未滿 → 無更多。
+    next_before = str(messages[-1].id) if len(messages) == limit else None
     return SearchResponseOut(items=items, next_before=next_before)

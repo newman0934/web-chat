@@ -146,6 +146,58 @@ async def test_search_pagination(session_factory):
         assert ids1.isdisjoint(ids2)  # 不重複
 
 
+async def test_search_pagination_same_timestamp(session_factory):
+    """created_at 完全相同(極端 tie)時,複合 keyset 仍不重不漏。"""
+    async with session_factory() as db:
+        alice, bob = _mk_user(db, "Alice"), _mk_user(db, "Bob")
+        await db.flush()
+        conv = await get_or_create_direct_conversation(db, alice.id, bob.id)
+        same = BASE  # 25 則同一時間
+        for _ in range(25):
+            m = Message(conversation_id=conv.id, sender_id=bob.id, content="同刻報表")
+            m.created_at = same
+            db.add(m)
+        await db.commit()
+
+        seen: set = set()
+        cursor = None
+        pages = 0
+        while True:
+            resp = await search_messages(db, alice.id, "同刻報表", cursor, 10)
+            for r in resp.items:
+                assert r.message.id not in seen  # 不重複
+                seen.add(r.message.id)
+            pages += 1
+            if resp.next_before is None:
+                break
+            cursor = resp.next_before
+            assert pages < 10  # 防呆:不應無限迴圈
+        assert len(seen) == 25  # 不漏
+
+
+async def test_search_pagination_grouped_ties(session_factory):
+    """模擬 e2e:created_at 為秒級、每秒數則(混合 tie),複合 keyset 不重不漏。"""
+    async with session_factory() as db:
+        alice, bob = _mk_user(db, "Alice"), _mk_user(db, "Bob")
+        await db.flush()
+        conv = await get_or_create_direct_conversation(db, alice.id, bob.id)
+        for i in range(25):
+            m = Message(conversation_id=conv.id, sender_id=bob.id, content="群tie報表")
+            m.created_at = BASE + timedelta(seconds=i // 3)  # 每 3 則共用一個秒
+            db.add(m)
+        await db.commit()
+
+        seen: list = []
+        cursor = None
+        for _ in range(10):
+            resp = await search_messages(db, alice.id, "群tie報表", cursor, 10)
+            seen.extend(r.message.id for r in resp.items)
+            if resp.next_before is None:
+                break
+            cursor = resp.next_before
+        assert len(seen) == len(set(seen)) == 25  # 不重(set==list)且不漏(==25)
+
+
 def test_escape_like():
     assert escape_like("50%") == "50\\%"
     assert escape_like("a_b") == "a\\_b"

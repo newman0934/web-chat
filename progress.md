@@ -303,24 +303,47 @@ CI、Docker build、E2E 三條 workflow 於 GitHub 皆綠。
 
 ---
 
+# 訊息搜尋（message-search,SDD 全流程,2026-06-24）
+
+依嚴格 SDD 完成第一個新功能(spec/bdd/acceptance/plan/tasks → 批准 → Playwright skeleton →
+實作 → 驗證)。規格見 `docs/superpowers/specs/message-search/`。
+
+- **後端**:`GET /search/messages?q=&before=&limit=` —— 跨「我為成員的對話」以
+  `lower(col) LIKE` 子字串比對(內容 OR 寄件者名)、排除已刪除、權限隔離、萬用字元逸出;
+  批次序列化(無 N+1)、附 `conversation` ref 與 `sender_name`。
+  分頁採 `(created_at, id)` keyset、游標只帶錨點訊息 id,時間比較用子查詢「欄對欄」
+  (避開 SQLite 秒級 server_default 值與 Python datetime bind 的 `.000000` 微秒格式不一致
+  造成漏/重 —— 真 bug,已修並補同刻/分組 tie 測試)。
+- `list_messages` 加 `around`(視窗載入)/ `after`(向下分頁),與 `before` 互斥(422)、404 守門。
+- **前端**:側欄搜尋框(debounce)+ 結果清單(`<mark>` 高亮、向下分頁);點結果 →
+  `around` 載入視窗 → Thread 捲動定位、命中泡泡暫時高亮 ~2s。純函式(highlightParts /
+  toSearchResultView / nextSearchCursor)抽離可測。
+- **測試**:backend `test_search`(14)+ `test_messages_around`(6);chat `search.test`(9);
+  e2e `search-api`(11)+ `search-ui`(1,跳轉高亮)。Postgres 另驗分頁不重不漏與命中。
+
+驗證:backend **175 passed**、chat vitest **127**、e2e **63**、三 app tsc 乾淨;
+SQLite + Postgres 雙環境搜尋結果一致。
+
+---
+
 # 測試狀態
 
 ## Backend
 
-- Pytest：PASS（156）
+- Pytest：PASS（175）
 
 ---
 
 ## Frontend
 
-- Vitest：PASS（chat 117、shell 8）
+- Vitest：PASS（chat 127、shell 8）
 - TypeScript Type Check：PASS（chat / shell / auth）
 
 ---
 
 ## E2E
 
-- Playwright：PASS（51 tests,於 GitHub e2e.yml workflow 跑全棧，~1m36s）
+- Playwright：PASS（63 tests,於 GitHub e2e.yml workflow 跑全棧）
 
 ---
 

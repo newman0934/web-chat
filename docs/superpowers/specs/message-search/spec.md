@@ -62,7 +62,8 @@ Authorization: Bearer <token>
 ```
 
 - `q`：必填，strip 後長度 1–100，否則 422。
-- `before`：選填，ISO8601；只回 `created_at < before` 的結果。
+- `before`：選填，不透明游標（上一頁回傳的 `next_before`，內容為錨點訊息 id）；
+  以 `(created_at, id)` keyset 取更舊的結果。
 - `limit`：選填，預設 20，範圍 1–50。
 
 **200 回應**：
@@ -77,15 +78,18 @@ Authorization: Bearer <token>
         "type": "direct | group",
         "name": "群組名稱或 null",
         "other_user": { "id": "uuid", "email": "...", "display_name": "..." }
-      }
+      },
+      "sender_name": "寄件者顯示名"
     }
   ],
-  "next_before": "2026-06-20T10:00:00+00:00 或 null"
+  "next_before": "<不透明游標：錨點訊息 id> 或 null"
 }
 ```
 
 - `conversation.other_user`：`direct` 才有（對方）；`group` 為 `null`，以 `name` 顯示。
-- `next_before`：當 `len(items) == limit` 時為最後一筆的 `created_at`，否則 `null`。
+- `sender_name`：寄件者顯示名（群組成員不在 `conversation` 內，故每筆獨立帶上）。
+- `next_before`：當 `len(items) == limit` 時為不透明游標（錨點訊息 id），否則 `null`。
+  改用 `(created_at, id)` 複合 keyset，避免 `created_at` 同值（秒級 server_default）時漏/重。
 
 **錯誤**：401（未授權）、422（`q` 空 / 過長 / 同時帶互斥參數）。
 
