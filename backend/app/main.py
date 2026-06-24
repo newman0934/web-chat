@@ -18,6 +18,7 @@ from app.routers import (
 from app.ws import router as ws_router
 
 settings = get_settings()
+settings.ensure_secure()  # 正式環境若未覆寫 JWT_SECRET 等預設值，於此直接啟動失敗
 configure_logging()
 
 app = FastAPI(title="chat-web API", version="0.1.0")

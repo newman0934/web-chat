@@ -45,3 +45,6 @@ class SlidingWindowLimiter:
 
 # 登入失敗:每來源 IP 60 秒內最多 10 次,超過即回 429。
 login_limiter = SlidingWindowLimiter(max_events=10, window_seconds=60)
+
+# 註冊:每來源 IP 每小時最多 20 個帳號(每次嘗試都計入),擋自動化大量建帳號。
+register_limiter = SlidingWindowLimiter(max_events=20, window_seconds=3600)

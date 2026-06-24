@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.security import create_access_token, hash_password, verify_password
 from app.db import get_db
 from app.models import User
-from app.ratelimit import login_limiter
+from app.ratelimit import login_limiter, register_limiter
 from app.schemas import LoginRequest, RegisterRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -20,7 +20,17 @@ def _client_key(request: Request) -> str:
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    request: Request, payload: RegisterRequest, db: AsyncSession = Depends(get_db)
+):
+    key = _client_key(request)
+    # 該 IP 近期建帳號過多 → 擋下(防自動化大量註冊);每次嘗試都計入。
+    if not register_limiter.allowed(key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="註冊次數過多，請稍後再試",
+        )
+    register_limiter.record(key)
     # email 唯一，先檢查避免撞 DB unique 約束才報錯。
     existing = await db.execute(select(User).where(User.email == payload.email))
     if existing.scalar_one_or_none() is not None:

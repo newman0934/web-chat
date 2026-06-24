@@ -60,6 +60,25 @@ async def test_login_success_does_not_count_toward_limit(client, register_user):
         assert r.status_code == 200
 
 
+async def test_register_rate_limited(client):
+    # 同一 IP 連續註冊到上限(20)皆成功;第 21 次被速率限制擋下 → 429。
+    for i in range(20):
+        r = await client.post(
+            "/auth/register",
+            json={
+                "email": f"reg{i}@example.com",
+                "display_name": f"U{i}",
+                "password": "secret123",
+            },
+        )
+        assert r.status_code == 201, r.text
+    blocked = await client.post(
+        "/auth/register",
+        json={"email": "over@example.com", "display_name": "Over", "password": "secret123"},
+    )
+    assert blocked.status_code == 429
+
+
 async def test_users_me_requires_token(client, register_user, auth_headers):
     token = await register_user("c@example.com", "Carol")
     unauth = await client.get("/users/me")
