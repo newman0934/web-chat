@@ -47,7 +47,7 @@ function mkMessage(over: Partial<Message> = {}): Message {
     content: '內容',
     created_at: '2026-06-24T12:00:00+00:00',
     read_count: 0,
-    attachment: null,
+    attachments: [],
     edited_at: null,
     deleted: false,
     reactions: [],

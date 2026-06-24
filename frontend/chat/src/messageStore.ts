@@ -18,7 +18,7 @@ export function makeOptimistic(
   senderId: string,
   content: string,
   tempId: string,
-  attachment: Attachment | null = null,
+  attachments: Attachment[] = [],
   replyTo: ReplyPreview | null = null,
 ): ChatMessage {
   return {
@@ -28,7 +28,7 @@ export function makeOptimistic(
     content,
     created_at: new Date().toISOString(),
     read_count: 0,
-    attachment,
+    attachments,
     edited_at: null,
     deleted: false,
     deleted_at: null,

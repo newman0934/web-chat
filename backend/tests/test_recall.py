@@ -69,7 +69,7 @@ async def test_recall_broadcasts_and_masks(session_factory):
                 assert evt["message"]["id"] == mid
                 assert evt["message"]["recalled"] is True
                 assert evt["message"]["content"] == ""
-                assert evt["message"]["attachment"] is None
+                assert evt["message"]["attachments"] == []
                 assert evt["message"]["reactions"] == []
 
 

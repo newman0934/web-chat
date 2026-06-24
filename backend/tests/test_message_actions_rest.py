@@ -51,4 +51,4 @@ async def test_history_masks_deleted(client, register_user, auth_headers, sessio
     assert msgs[0]["deleted"] is True
     assert msgs[0]["content"] == ""
     assert msgs[0]["reactions"] == []
-    assert msgs[0]["attachment"] is None
+    assert msgs[0]["attachments"] == []

@@ -26,16 +26,16 @@ async def test_ws_message_with_attachment(client, register_user, auth_headers):
         with tc.websocket_connect(f"/ws?token={alice}") as wa:
             wa.send_json({
                 "type": "message", "conversation_id": conv_id,
-                "content": "", "attachment_id": att["id"], "temp_id": "t1",
+                "content": "", "attachment_ids": [att["id"]], "temp_id": "t1",
             })
             ack = wa.receive_json()
             assert ack["type"] == "ack"
-            assert ack["message"]["attachment"]["id"] == att["id"]
-            assert ack["message"]["attachment"]["is_image"] is True
+            assert ack["message"]["attachments"][0]["id"] == att["id"]
+            assert ack["message"]["attachments"][0]["is_image"] is True
 
     # 歷史也帶 attachment
     history = await client.get(f"/conversations/{conv_id}/messages", headers=auth_headers(bob))
-    assert history.json()[0]["attachment"]["original_name"] == "p.png"
+    assert history.json()[0]["attachments"][0]["original_name"] == "p.png"
 
 
 async def test_ws_rejects_used_or_foreign_attachment(client, register_user, auth_headers):
@@ -50,7 +50,7 @@ async def test_ws_rejects_used_or_foreign_attachment(client, register_user, auth
         with tc.websocket_connect(f"/ws?token={alice}") as wa:
             wa.send_json({
                 "type": "message", "conversation_id": conv_id,
-                "content": "hi", "attachment_id": bob_att["id"], "temp_id": "t",
+                "content": "hi", "attachment_ids": [bob_att["id"]], "temp_id": "t",
             })
             assert wa.receive_json()["reason"] == "invalid_attachment"
 
@@ -68,7 +68,7 @@ async def test_ws_rejects_already_used_attachment(client, register_user, auth_he
             # 第一次送出 — 應該成功，attachment 被綁定到 message
             wa.send_json({
                 "type": "message", "conversation_id": conv_id,
-                "content": "", "attachment_id": att["id"], "temp_id": "t1",
+                "content": "", "attachment_ids": [att["id"]], "temp_id": "t1",
             })
             ack = wa.receive_json()
             assert ack["type"] == "ack"
@@ -76,7 +76,7 @@ async def test_ws_rejects_already_used_attachment(client, register_user, auth_he
             # 第二次送出同一個 attachment_id — 已被綁定，應回 invalid_attachment
             wa.send_json({
                 "type": "message", "conversation_id": conv_id,
-                "content": "", "attachment_id": att["id"], "temp_id": "t2",
+                "content": "", "attachment_ids": [att["id"]], "temp_id": "t2",
             })
             err = wa.receive_json()
             assert err["type"] == "error"

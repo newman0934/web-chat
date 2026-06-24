@@ -23,7 +23,7 @@ function msg(over: Partial<ChatMessage>): ChatMessage {
     created_at: '2026-06-19T00:00:00Z',
     read_count: 0,
     status: 'sent',
-    attachment: null,
+    attachments: [],
     edited_at: null,
     deleted: false,
     reactions: [],
@@ -195,7 +195,7 @@ describe('Thread', () => {
     const input = screen.getByLabelText('訊息輸入') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '在嗎' } });
     fireEvent.click(screen.getByRole('button', { name: '送出' }));
-    expect(onSend).toHaveBeenCalledWith('在嗎', undefined);
+    expect(onSend).toHaveBeenCalledWith('在嗎', []);
     expect(input.value).toBe('');
   });
 
@@ -224,8 +224,8 @@ describe('Thread', () => {
         title="Bob" isGroup={false} memberNames={{}}
         attachmentUrl={(id) => `http://api/attachments/${id}`}
         messages={[
-          msg({ id: 'm1', attachment: { id: 'img1', original_name: 'p.png', content_type: 'image/png', size: 3, is_image: true } }),
-          msg({ id: 'm2', attachment: { id: 'doc1', original_name: 'r.pdf', content_type: 'application/pdf', size: 9, is_image: false } }),
+          msg({ id: 'm1', attachments: [{ id: 'img1', original_name: 'p.png', content_type: 'image/png', size: 3, is_image: true }] }),
+          msg({ id: 'm2', attachments: [{ id: 'doc1', original_name: 'r.pdf', content_type: 'application/pdf', size: 9, is_image: false }] }),
         ]}
         currentUserId="me" canLoadMore={false}
         onLoadMore={vi.fn()} onSend={vi.fn()} onRetry={vi.fn()}
@@ -478,7 +478,7 @@ describe('Thread 回覆 UI', () => {
     // onSend 被呼叫，第三引數為被引用訊息 id
     expect(onSend).toHaveBeenCalledWith(
       '好的',
-      undefined,
+      [],
       'm1',
       expect.objectContaining({ id: 'm1', sender_id: 'alice' }),
     );

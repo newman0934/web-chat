@@ -25,7 +25,7 @@ from app.storage import make_stored_name, save_bytes, stored_path
 
 router = APIRouter(tags=["uploads"])
 
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_UPLOAD_BYTES = 1 * 1024 * 1024  # 每檔上限 1MB(多附件:一則最多 5 個、整則總量 10MB)
 UPLOAD_CHUNK_BYTES = 64 * 1024
 
 
@@ -51,14 +51,14 @@ async def upload(
 ):
     # 宣告大小(Content-Length，若有)就先擋掉,連讀都不必。
     if file.size is not None and file.size > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="檔案過大（上限 10MB）")
+        raise HTTPException(status_code=413, detail="檔案過大（上限 1MB）")
     # 分塊讀取並累計;一超過上限就中止,避免把可能超大(或宣告大小造假)的檔案整個載入記憶體。
     chunks: list[bytes] = []
     total = 0
     while chunk := await file.read(UPLOAD_CHUNK_BYTES):
         total += len(chunk)
         if total > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="檔案過大（上限 10MB）")
+            raise HTTPException(status_code=413, detail="檔案過大（上限 1MB）")
         chunks.append(chunk)
     data = b"".join(chunks)
     if not data:

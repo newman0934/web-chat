@@ -9,7 +9,7 @@ function mkMsg(over: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: 'm1', conversation_id: 'c1', sender_id: 'me', content: 'hi',
     created_at: '2026-06-24T11:59:00Z', // 1 分鐘前
-    read_count: 0, attachment: null, edited_at: null, deleted: false, reactions: [],
+    read_count: 0, attachments: [], edited_at: null, deleted: false, reactions: [],
     status: 'sent', ...over,
   } as ChatMessage;
 }

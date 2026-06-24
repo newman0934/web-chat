@@ -112,7 +112,7 @@ class MessageOut(BaseModel):
     content: str
     created_at: datetime
     read_count: int = 0  # 讀過此則的人數（排除寄件人）
-    attachment: AttachmentOut | None = None
+    attachments: list[AttachmentOut] = Field(default_factory=list)
     edited_at: datetime | None = None
     deleted: bool = False
     deleted_at: datetime | None = None

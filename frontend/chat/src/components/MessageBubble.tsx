@@ -116,27 +116,39 @@ export function MessageBubble({
             onScrollToMessage={onScrollToMessage}
           />
         )}
-        {message.attachment && (
-          message.attachment.is_image ? (
-            <a href={attachmentUrl(message.attachment.id)} target="_blank" rel="noreferrer">
-              <img
-                src={attachmentUrl(message.attachment.id)}
-                alt={message.attachment.original_name}
-                className="mb-1 max-h-60 max-w-full rounded-lg"
-              />
-            </a>
-          ) : (
-            <a
-              href={attachmentUrl(message.attachment.id)}
-              target="_blank"
-              rel="noreferrer"
-              className="mb-1 flex items-center gap-2 rounded-lg bg-black/10 px-3 py-2 text-sm underline"
-            >
-              📎 {message.attachment.original_name}
-              <span className="opacity-70">({message.attachment.size} bytes)</span>
-            </a>
-          )
-        )}
+        {message.attachments.length > 0 && (() => {
+          const images = message.attachments.filter((a) => a.is_image);
+          const files = message.attachments.filter((a) => !a.is_image);
+          return (
+            <div className="mb-1 space-y-1" data-testid="attachments">
+              {images.length > 0 && (
+                <div className={`grid gap-1 ${images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  {images.map((a) => (
+                    <a key={a.id} href={attachmentUrl(a.id)} target="_blank" rel="noreferrer">
+                      <img
+                        src={attachmentUrl(a.id)}
+                        alt={a.original_name}
+                        className="max-h-60 w-full rounded-lg object-cover"
+                      />
+                    </a>
+                  ))}
+                </div>
+              )}
+              {files.map((a) => (
+                <a
+                  key={a.id}
+                  href={attachmentUrl(a.id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 rounded-lg bg-black/10 px-3 py-2 text-sm underline"
+                >
+                  📎 {a.original_name}
+                  <span className="opacity-70">({a.size} bytes)</span>
+                </a>
+              ))}
+            </div>
+          );
+        })()}
         <p className="whitespace-pre-wrap break-words">{message.content}</p>
         {mine && (
           <p className="mt-1 text-right text-xs opacity-80">

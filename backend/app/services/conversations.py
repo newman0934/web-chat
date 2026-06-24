@@ -156,13 +156,23 @@ async def mark_read(
     return ids
 
 
-async def get_attachment_for_message(
+async def get_attachments_for_message(
     db: AsyncSession, message_id: uuid.UUID
-) -> Attachment | None:
+) -> list[Attachment]:
+    """該訊息的全部附件,依上傳時間(created_at, id)排序(近似送出時的順序)。"""
     result = await db.execute(
-        select(Attachment).where(Attachment.message_id == message_id)
+        select(Attachment)
+        .where(Attachment.message_id == message_id)
+        .order_by(Attachment.position, Attachment.id)
     )
-    return result.scalar_one_or_none()
+    return list(result.scalars().all())
+
+
+async def message_has_attachment(db: AsyncSession, message_id: uuid.UUID) -> bool:
+    result = await db.execute(
+        select(Attachment.id).where(Attachment.message_id == message_id).limit(1)
+    )
+    return result.first() is not None
 
 
 async def get_reaction_groups(
@@ -248,10 +258,7 @@ async def build_reply_preview(db: AsyncSession, message: Message) -> dict | None
     # 原訊息已刪除或已撤回:引用塊一律遮蔽。
     deleted = orig.deleted_at is not None or orig.recalled_at is not None
     content = "" if deleted else orig.content
-    has_attachment = (
-        (not deleted)
-        and (await get_attachment_for_message(db, orig.id)) is not None
-    )
+    has_attachment = (not deleted) and await message_has_attachment(db, orig.id)
     return {
         "id": orig.id,
         "sender_id": orig.sender_id,

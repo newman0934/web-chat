@@ -175,9 +175,9 @@ async def test_forward_with_attachment_copies_attachment_row(
     new_msg_id = uuid.UUID(msg["id"])
 
     # 驗證序列化 payload 內的 attachment(不外露 stored_name;改驗 is_image)
-    assert msg["attachment"] is not None
-    assert msg["attachment"]["is_image"] is True
-    assert msg["attachment"]["original_name"] == "photo.png"
+    assert len(msg["attachments"]) == 1
+    assert msg["attachments"][0]["is_image"] is True
+    assert msg["attachments"][0]["original_name"] == "photo.png"
 
     # 驗證 DB 有一列新的 Attachment 綁到新訊息
     async with session_factory() as s:

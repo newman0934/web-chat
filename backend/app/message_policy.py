@@ -7,6 +7,10 @@ EDIT_WINDOW = timedelta(minutes=15)
 RESTORE_WINDOW = timedelta(minutes=5)
 RECALL_WINDOW = timedelta(minutes=2)
 
+# 多附件:一則訊息最多 5 個附件、所有附件總量上限 10MB(每檔上限 1MB 由上傳端點把關)。
+MAX_ATTACHMENTS = 5
+MAX_ATTACHMENTS_TOTAL_BYTES = 10 * 1024 * 1024
+
 _DISALLOWED_IN_EMOJI = re.compile(r"[A-Za-z0-9\s]")
 
 

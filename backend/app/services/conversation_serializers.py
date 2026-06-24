@@ -31,7 +31,7 @@ from app.schemas import (
 from app.services.conversations import (
     build_forwarded_from,
     build_reply_preview,
-    get_attachment_for_message,
+    get_attachments_for_message,
     get_member_ids,
     get_reaction_groups,
     get_role_map,
@@ -51,7 +51,7 @@ async def serialize_message_out(
     deleted = m.deleted_at is not None
     recalled = m.recalled_at is not None
     masked = deleted or recalled  # 已刪除或已撤回:內容/附件/表情一律遮蔽
-    att = None if masked else await get_attachment_for_message(db, m.id)
+    atts = [] if masked else await get_attachments_for_message(db, m.id)
     groups = [] if masked else await get_reaction_groups(db, m.id)
     # reply_to / forwarded_from:helper 回傳的 dict 內 uuid 欄位保留原生 uuid.UUID;
     # Pydantic 可直接用 uuid.UUID 填入 uuid 欄位。
@@ -62,7 +62,7 @@ async def serialize_message_out(
         id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
         content="" if masked else m.content, created_at=m.created_at,
         read_count=rc,
-        attachment=AttachmentOut.model_validate(att) if att else None,
+        attachments=[AttachmentOut.model_validate(a) for a in atts],
         edited_at=m.edited_at,
         deleted=deleted,
         deleted_at=m.deleted_at,
@@ -89,14 +89,18 @@ async def serialize_messages_out(db: AsyncSession, messages: list[Message]):
     reply_ids = list({m.reply_to_message_id for m in messages if m.reply_to_message_id is not None})
     fwd_ids = list({m.forwarded_from_user_id for m in messages if m.forwarded_from_user_id is not None})
 
-    # 附件:本頁(非刪)訊息的(供 attachment 欄位)+ 被回覆訊息的(供 reply 預覽 has_attachment)。
+    # 附件:本頁(非刪)訊息的(供 attachments 欄位)+ 被回覆訊息的(供 reply 預覽 has_attachment)。
+    # 一則可有多個附件 → 依 message_id 分組成 list,依 created_at/id 保序(近似送出順序)。
     att_msg_ids = set(live_ids) | set(reply_ids)
-    att_by_msg: dict = {}
+    atts_by_msg: dict = {}
     if att_msg_ids:
         arows = (await db.execute(
-            select(Attachment).where(Attachment.message_id.in_(att_msg_ids))
+            select(Attachment)
+            .where(Attachment.message_id.in_(att_msg_ids))
+            .order_by(Attachment.position, Attachment.id)
         )).scalars().all()
-        att_by_msg = {a.message_id: a for a in arows}
+        for a in arows:
+            atts_by_msg.setdefault(a.message_id, []).append(a)
 
     # 表情:本頁非刪訊息,依 message_id 再依 emoji 分組(保留 first-seen 順序,與逐則一致)。
     reactions_by_msg: dict = {}
@@ -142,7 +146,7 @@ async def serialize_messages_out(db: AsyncSession, messages: list[Message]):
         deleted = m.deleted_at is not None
         recalled = m.recalled_at is not None
         masked = deleted or recalled
-        att = None if masked else att_by_msg.get(m.id)
+        atts = [] if masked else atts_by_msg.get(m.id, [])
         groups = [] if masked else reactions_by_msg.get(m.id, [])
         reply_to_d = None
         if m.reply_to_message_id is not None:
@@ -155,7 +159,7 @@ async def serialize_messages_out(db: AsyncSession, messages: list[Message]):
                     "sender_id": orig.sender_id,
                     "content": "" if odel else orig.content,
                     "deleted": odel,
-                    "has_attachment": (not odel) and (att_by_msg.get(orig.id) is not None),
+                    "has_attachment": (not odel) and bool(atts_by_msg.get(orig.id)),
                 }
         forwarded_from_d = None
         if m.forwarded_from_user_id is not None:
@@ -166,7 +170,7 @@ async def serialize_messages_out(db: AsyncSession, messages: list[Message]):
             id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id,
             content="" if masked else m.content, created_at=m.created_at,
             read_count=rc_by_msg.get(m.id, 0),
-            attachment=AttachmentOut.model_validate(att) if att else None,
+            attachments=[AttachmentOut.model_validate(a) for a in atts],
             edited_at=m.edited_at,
             deleted=deleted,
             deleted_at=m.deleted_at,

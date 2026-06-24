@@ -88,7 +88,7 @@ async def test_serialize_messages_batch_matches_per_message(session_factory):
         # 語意正確(避免兩版同壞的恆等假象)
         by = {x.id: x for x in batched}
         assert by[m1.id].read_count == 1
-        assert by[m2.id].attachment is not None and by[m2.id].attachment.original_name == "pic.png"
+        assert len(by[m2.id].attachments) == 1 and by[m2.id].attachments[0].original_name == "pic.png"
         r = {g.emoji: g for g in by[m3.id].reactions}
         assert r["👍"].count == 2 and set(r["👍"].user_ids) == {alice.id, bob.id}
         assert r["❤️"].count == 1

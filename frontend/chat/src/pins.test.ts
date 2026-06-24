@@ -13,7 +13,7 @@ function mkConv(over: Partial<Conversation> = {}): Conversation {
 function mkMsg(id: string): Message {
   return {
     id, conversation_id: 'c1', sender_id: 'u', content: id, created_at: '2026-06-24T12:00:00+00:00',
-    read_count: 0, attachment: null, edited_at: null, deleted: false, reactions: [],
+    read_count: 0, attachments: [], edited_at: null, deleted: false, reactions: [],
   };
 }
 

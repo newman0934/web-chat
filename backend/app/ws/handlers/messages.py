@@ -11,10 +11,17 @@ from fastapi import WebSocket
 from sqlalchemy import delete as sa_delete, select
 
 from app import db as db_module
-from app.message_policy import EDIT_WINDOW, RECALL_WINDOW, RESTORE_WINDOW, is_valid_reaction_emoji
+from app.message_policy import (
+    EDIT_WINDOW,
+    MAX_ATTACHMENTS,
+    MAX_ATTACHMENTS_TOTAL_BYTES,
+    RECALL_WINDOW,
+    RESTORE_WINDOW,
+    is_valid_reaction_emoji,
+)
 from app.models import Attachment, Message, MessageEdit, Reaction, User
 from app.services.conversations import (
-    get_attachment_for_message,
+    get_attachments_for_message,
     get_conversation_for_member,
     get_member_ids,
     get_other_member_ids,
@@ -47,10 +54,15 @@ async def handle_send(websocket: WebSocket, user: User, data: dict) -> None:
     conv_id_raw = data.get("conversation_id")
     content = (data.get("content") or "").strip()
     temp_id = data.get("temp_id")
-    attachment_id_raw = data.get("attachment_id")
+    attachment_ids_raw = data.get("attachment_ids") or []
     reply_to_message_id_raw = data.get("reply_to_message_id")
 
-    if not conv_id_raw or (not content and not attachment_id_raw):
+    if not isinstance(attachment_ids_raw, list):
+        await websocket.send_json(
+            {"type": "error", "reason": "invalid_payload", "temp_id": temp_id}
+        )
+        return
+    if not conv_id_raw or (not content and not attachment_ids_raw):
         await websocket.send_json(
             {"type": "error", "reason": "invalid_payload", "temp_id": temp_id}
         )
@@ -60,6 +72,26 @@ async def handle_send(websocket: WebSocket, user: User, data: dict) -> None:
     except ValueError:
         await websocket.send_json(
             {"type": "error", "reason": "invalid_conversation", "temp_id": temp_id}
+        )
+        return
+
+    # 解析 + 去重(保序);超過上限即擋。
+    seen: set = set()
+    att_ids: list = []
+    for raw in attachment_ids_raw:
+        try:
+            aid = uuid.UUID(str(raw))
+        except ValueError:
+            await websocket.send_json(
+                {"type": "error", "reason": "invalid_attachment", "temp_id": temp_id}
+            )
+            return
+        if aid not in seen:
+            seen.add(aid)
+            att_ids.append(aid)
+    if len(att_ids) > MAX_ATTACHMENTS:
+        await websocket.send_json(
+            {"type": "error", "reason": "too_many_attachments", "temp_id": temp_id}
         )
         return
 
@@ -97,23 +129,24 @@ async def handle_send(websocket: WebSocket, user: User, data: dict) -> None:
                 )
                 return
 
-        attachment = None
-        if attachment_id_raw:
-            try:
-                att_id = uuid.UUID(str(attachment_id_raw))
-            except ValueError:
+        attachments: list[Attachment] = []
+        if att_ids:
+            rows = (await db.execute(
+                select(Attachment).where(Attachment.id.in_(att_ids))
+            )).scalars().all()
+            by_id = {a.id: a for a in rows}
+            # 全部都必須存在、屬本人、且尚未綁定(任一不符即整體拒絕,不部分綁定)。
+            for aid in att_ids:
+                a = by_id.get(aid)
+                if a is None or a.uploader_id != user.id or a.message_id is not None:
+                    await websocket.send_json(
+                        {"type": "error", "reason": "invalid_attachment", "temp_id": temp_id}
+                    )
+                    return
+                attachments.append(a)
+            if sum(a.size for a in attachments) > MAX_ATTACHMENTS_TOTAL_BYTES:
                 await websocket.send_json(
-                    {"type": "error", "reason": "invalid_attachment", "temp_id": temp_id}
-                )
-                return
-            attachment = await db.get(Attachment, att_id)
-            if (
-                attachment is None
-                or attachment.uploader_id != user.id
-                or attachment.message_id is not None
-            ):
-                await websocket.send_json(
-                    {"type": "error", "reason": "invalid_attachment", "temp_id": temp_id}
+                    {"type": "error", "reason": "attachments_too_large", "temp_id": temp_id}
                 )
                 return
 
@@ -126,8 +159,9 @@ async def handle_send(websocket: WebSocket, user: User, data: dict) -> None:
         db.add(message)
         try:
             await db.flush()  # 取得 message.id，尚未 commit
-            if attachment is not None:
-                attachment.message_id = message.id
+            for i, a in enumerate(attachments):
+                a.message_id = message.id
+                a.position = i  # 依 attachment_ids 順序設定顯示順序
             # 被回覆 → 通知原訊息 sender（與訊息同一 transaction;自己回自己不建）。
             reply_notif = None
             if reply_msg is not None:
@@ -137,8 +171,8 @@ async def handle_send(websocket: WebSocket, user: User, data: dict) -> None:
                 )
             await db.commit()
             await db.refresh(message)
-            if attachment is not None:
-                await db.refresh(attachment)
+            for a in attachments:
+                await db.refresh(a)
         except Exception:
             await db.rollback()
             await websocket.send_json(
@@ -362,9 +396,8 @@ async def handle_forward(websocket: WebSocket, user: User, data: dict) -> None:
         db.add(new_msg)
         await db.flush()  # 取得 new_msg.id
 
-        # 6. 若原訊息有附件，複製一列（共用 stored_name，不動磁碟檔）
-        att = await get_attachment_for_message(db, orig.id)
-        if att is not None:
+        # 6. 複製原訊息的全部附件（各複製一列，共用 stored_name，不動磁碟檔，保留順序）
+        for i, att in enumerate(await get_attachments_for_message(db, orig.id)):
             db.add(Attachment(
                 message_id=new_msg.id,
                 uploader_id=user.id,
@@ -373,6 +406,7 @@ async def handle_forward(websocket: WebSocket, user: User, data: dict) -> None:
                 content_type=att.content_type,
                 size=att.size,
                 is_image=att.is_image,
+                position=i,
             ))
 
         # 7. 被轉發 → 通知原訊息 sender（conversation 為原訊息所在對話;自己轉自己不建）。

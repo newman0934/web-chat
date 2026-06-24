@@ -48,6 +48,11 @@ export interface Attachment {
   is_image: boolean;
 }
 
+/** 多附件限制（與後端各一份）：一則最多 5 個、每檔 1MB、整則總量 10MB。 */
+export const MAX_ATTACHMENTS = 5;
+export const MAX_FILE_BYTES = 1 * 1024 * 1024;
+export const MAX_ATTACHMENTS_TOTAL_BYTES = 10 * 1024 * 1024;
+
 export interface ReactionGroup {
   emoji: string;
   count: number;
@@ -86,7 +91,7 @@ export interface Message {
   content: string;
   created_at: string;
   read_count: number;
-  attachment: Attachment | null;
+  attachments: Attachment[];
   edited_at: string | null;
   deleted: boolean;
   deleted_at?: string | null;
@@ -170,7 +175,7 @@ export interface CallFrom {
 }
 
 export type ClientWsMessage =
-  | { type: 'message'; conversation_id: string; content: string; temp_id: string; attachment_id?: string; reply_to_message_id?: string }
+  | { type: 'message'; conversation_id: string; content: string; temp_id: string; attachment_ids?: string[]; reply_to_message_id?: string }
   | { type: 'read'; conversation_id: string }
   | { type: 'typing'; conversation_id: string }
   | { type: 'edit'; message_id: string; content: string }

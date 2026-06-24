@@ -34,7 +34,7 @@ async def test_upload_detects_image(client, register_user, auth_headers):
 
 async def test_upload_too_large_413(client, register_user, auth_headers):
     token = await register_user("big@example.com", "Big")
-    big = b"x" * (10 * 1024 * 1024 + 1)
+    big = b"x" * (1 * 1024 * 1024 + 1)  # 每檔上限 1MB
     resp = await client.post(
         "/uploads",
         files={"file": ("big.bin", big, "application/octet-stream")},
@@ -44,16 +44,16 @@ async def test_upload_too_large_413(client, register_user, auth_headers):
 
 
 async def test_upload_at_limit_ok(client, register_user, auth_headers):
-    """恰好等於上限(10MB)可上傳成功(邊界含端點)。"""
+    """恰好等於上限(1MB)可上傳成功(邊界含端點)。"""
     token = await register_user("atlimit@example.com", "AtLimit")
-    exact = b"x" * (10 * 1024 * 1024)
+    exact = b"x" * (1 * 1024 * 1024)
     resp = await client.post(
         "/uploads",
         files={"file": ("exact.bin", exact, "application/octet-stream")},
         headers=auth_headers(token),
     )
     assert resp.status_code == 201, resp.text
-    assert resp.json()["size"] == 10 * 1024 * 1024
+    assert resp.json()["size"] == 1 * 1024 * 1024
 
 
 async def test_upload_multichunk_roundtrip(client, register_user, auth_headers):

@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { Attachment, Message, MessageVersion, ReplyPreview } from '../../../contracts';
+import { validateAttachments } from '../attachments';
 import type { ChatMessage } from '../messageStore';
 import { MessageBubble } from './MessageBubble';
 import { PinnedBar } from './PinnedBar';
@@ -23,7 +24,7 @@ interface ThreadProps {
   currentUserId: string;
   canLoadMore: boolean;
   onLoadMore: () => void;
-  onSend: (content: string, attachmentId?: string, replyToMessageId?: string, replyPreview?: ReplyPreview | null) => void;
+  onSend: (content: string, attachmentIds?: string[], replyToMessageId?: string, replyPreview?: ReplyPreview | null) => void;
   onRetry: (tempId: string) => void;
   attachmentUrl: (id: string) => string;
   onUpload: (file: File) => Promise<UploadResult>;
@@ -81,7 +82,7 @@ export function Thread({
 }: ThreadProps) {
   const [draft, setDraft] = useState('');
   const [highlightId, setHighlightId] = useState<string | null>(null);
-  const [pending, setPending] = useState<Attachment | null>(null);
+  const [pending, setPending] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -113,15 +114,23 @@ export function Thread({
   }, [jumpNonce, jumpToMessageId, messages]);
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = '';
-    if (!f) return;
+    if (files.length === 0) return;
     setUploadError(null);
+    // 前端即時驗證:數量 / 單檔 / 總量(以目前待送 + 新選取)。
+    const check = validateAttachments(pending.map((p) => p.size), files.map((f) => f.size));
+    if (!check.ok) {
+      setUploadError(check.error ?? '附件不符限制');
+      return;
+    }
     setUploading(true);
-    const res = await onUpload(f);
+    for (const f of files) {
+      const res = await onUpload(f);
+      if (res.ok) setPending((prev) => [...prev, res.attachment]);
+      else { setUploadError(res.message); break; }
+    }
     setUploading(false);
-    if (res.ok) setPending(res.attachment);
-    else setUploadError(res.message);
   };
 
   /** 捲動到指定訊息（若在清單內），否則 no-op。 */
@@ -136,22 +145,23 @@ export function Thread({
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const content = draft.trim();
-    if (!content && !pending) return;
+    if (!content && pending.length === 0) return;
+    const ids = pending.map((p) => p.id);
     if (replyingTo) {
       const preview: ReplyPreview = {
         id: replyingTo.id,
         sender_id: replyingTo.sender_id,
         content: replyingTo.content,
         deleted: !!replyingTo.deleted,
-        has_attachment: !!replyingTo.attachment,
+        has_attachment: (replyingTo.attachments?.length ?? 0) > 0,
       };
-      onSend(content, pending?.id, replyingTo.id, preview);
+      onSend(content, ids, replyingTo.id, preview);
       setReplyingTo(null);
     } else {
-      onSend(content, pending?.id);
+      onSend(content, ids);
     }
     setDraft('');
-    setPending(null);
+    setPending([]);
   };
 
   return (
@@ -244,6 +254,7 @@ export function Thread({
         <input
           ref={fileRef}
           type="file"
+          multiple
           className="hidden"
           onChange={onPick}
         />
@@ -275,18 +286,22 @@ export function Thread({
               </button>
             </div>
           )}
-          {pending && (
-            <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1 text-sm text-slate-700">
-              <span className="truncate">{pending.original_name}</span>
-              <button
-                type="button"
-                aria-label="移除附件"
-                onClick={() => setPending(null)}
-                className="ml-auto text-slate-400 hover:text-slate-600"
-              >
-                ✕
-              </button>
-            </div>
+          {pending.length > 0 && (
+            <ul className="flex flex-wrap gap-1" data-testid="pending-attachments">
+              {pending.map((p) => (
+                <li key={p.id} className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                  <span className="max-w-[12rem] truncate">{p.original_name}</span>
+                  <button
+                    type="button"
+                    aria-label={`移除附件 ${p.original_name}`}
+                    onClick={() => setPending((prev) => prev.filter((x) => x.id !== p.id))}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
           {uploadError && (
             <div

@@ -12,7 +12,7 @@ function msg(id: string, conversationId = 'c1', over: Partial<Message> = {}): Me
     content: 'hi',
     created_at: '2026-06-20T00:00:00Z',
     read_count: 0,
-    attachment: null,
+    attachments: [],
     edited_at: null,
     deleted: false,
     reactions: [],
@@ -46,7 +46,7 @@ describe('dispatchServerMessage', () => {
     const st = useChatStore.getState();
     st.appendOptimistic('c1', {
       id: 't1', temp_id: 't1', conversation_id: 'c1', sender_id: 'me', content: 'hi',
-      created_at: '2026-06-20T00:00:00Z', read_count: 0, attachment: null, edited_at: null,
+      created_at: '2026-06-20T00:00:00Z', read_count: 0, attachments: [], edited_at: null,
       deleted: false, reactions: [], status: 'sending',
     });
     dispatchServerMessage({ type: 'ack', temp_id: 't1', message: msg('r1') }, deps());
@@ -97,7 +97,7 @@ describe('dispatchServerMessage', () => {
     const st = useChatStore.getState();
     st.appendOptimistic('c1', {
       id: 't1', temp_id: 't1', conversation_id: 'c1', sender_id: 'me', content: 'hi',
-      created_at: '2026-06-20T00:00:00Z', read_count: 0, attachment: null, edited_at: null,
+      created_at: '2026-06-20T00:00:00Z', read_count: 0, attachments: [], edited_at: null,
       deleted: false, reactions: [], status: 'sending',
     });
     dispatchServerMessage({ type: 'error', reason: 'db_error', temp_id: 't1' }, deps());

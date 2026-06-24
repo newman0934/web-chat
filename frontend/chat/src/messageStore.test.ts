@@ -21,7 +21,7 @@ function realMessage(id: string, content: string): Message {
     content,
     created_at: '2026-06-19T00:00:00Z',
     read_count: 0,
-    attachment: null,
+    attachments: [],
     edited_at: null,
     deleted: false,
     reactions: [],
@@ -84,8 +84,8 @@ describe('messageStore 樂觀更新', () => {
 
   it('makeOptimistic 可帶附件', () => {
     const att = { id: 'a1', original_name: 'p.png', content_type: 'image/png', size: 3, is_image: true };
-    const m = makeOptimistic('c1', 'me', '', 't1', att);
-    expect(m.attachment).toEqual(att);
+    const m = makeOptimistic('c1', 'me', '', 't1', [att]);
+    expect(m.attachments).toEqual([att]);
     expect(m.status).toBe('sending');
   });
 
@@ -114,7 +114,7 @@ describe('messageStore 樂觀更新', () => {
       deleted: false,
       has_attachment: false,
     };
-    const m = makeOptimistic('conv-1', 'me', 'reply text', 'tmp-2', null, replyPreview);
+    const m = makeOptimistic('conv-1', 'me', 'reply text', 'tmp-2', [], replyPreview);
     expect(m.reply_to).toEqual(replyPreview);
     expect(m.forwarded_from).toBeNull();
     expect(m.status).toBe('sending');
