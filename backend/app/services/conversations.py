@@ -55,6 +55,32 @@ async def get_or_create_direct_conversation(
     return conv
 
 
+async def get_or_create_direct_conversations(
+    db: AsyncSession, me_id: uuid.UUID, other_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, Conversation]:
+    """批次取(或補建)me 與多位 other 的 direct 對話,回 dict[other_id, Conversation]。
+
+    常見情況(對話在加好友時就建好)只需一次 IN 查詢,取代「逐位 other 各一次 SELECT」的 N+1;
+    缺漏者才逐一補建(罕見)。
+    """
+    if not other_ids:
+        return {}
+    keys = {oid: direct_key(me_id, oid) for oid in other_ids}
+    existing = {
+        c.direct_key: c for c in
+        (await db.execute(
+            select(Conversation).where(Conversation.direct_key.in_(keys.values()))
+        )).scalars().all()
+    }
+    result: dict[uuid.UUID, Conversation] = {}
+    for oid in other_ids:
+        conv = existing.get(keys[oid])
+        if conv is None:
+            conv = await get_or_create_direct_conversation(db, me_id, oid)  # 罕見:補建
+        result[oid] = conv
+    return result
+
+
 async def create_group_conversation(
     db: AsyncSession, creator_id: uuid.UUID, name: str, member_ids: list[uuid.UUID]
 ) -> Conversation:

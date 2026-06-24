@@ -53,10 +53,8 @@ async def create_notification(
     return n
 
 
-async def serialize_notification(db: AsyncSession, n: Notification) -> dict:
-    """組 JSON-ready 通知 dict（含 actor 名與被互動訊息摘要；已刪訊息摘要為空）。"""
-    actor = await db.get(User, n.actor_id)
-    msg = await db.get(Message, n.message_id)
+def _notification_dict(n: Notification, actor: User | None, msg: Message | None) -> dict:
+    """由通知 + 已取出的 actor / 被互動訊息組 JSON-ready dict(單一真相;已刪訊息摘要為空)。"""
     deleted = msg is not None and msg.deleted_at is not None
     preview = "" if (msg is None or deleted) else (msg.content or "")[:PREVIEW_LEN]
     return {
@@ -73,6 +71,30 @@ async def serialize_notification(db: AsyncSession, n: Notification) -> dict:
         "read": n.read_at is not None,
         "created_at": _iso(n.created_at),
     }
+
+
+async def serialize_notification(db: AsyncSession, n: Notification) -> dict:
+    """組單一通知 dict(WS 即時推播用;會各取一次 actor / 訊息)。"""
+    actor = await db.get(User, n.actor_id)
+    msg = await db.get(Message, n.message_id)
+    return _notification_dict(n, actor, msg)
+
+
+async def serialize_notifications(db: AsyncSession, notifs: list[Notification]) -> list[dict]:
+    """批次序列化一頁通知:actor 與被互動訊息各一次 IN 查詢,避免逐筆 2 個 db.get 的 N+1。"""
+    if not notifs:
+        return []
+    actor_ids = {n.actor_id for n in notifs}
+    msg_ids = {n.message_id for n in notifs}
+    actors = {
+        u.id: u for u in
+        (await db.execute(select(User).where(User.id.in_(actor_ids)))).scalars().all()
+    }
+    msgs = {
+        m.id: m for m in
+        (await db.execute(select(Message).where(Message.id.in_(msg_ids)))).scalars().all()
+    }
+    return [_notification_dict(n, actors.get(n.actor_id), msgs.get(n.message_id)) for n in notifs]
 
 
 async def list_notifications(

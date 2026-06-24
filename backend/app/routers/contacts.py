@@ -8,7 +8,10 @@ from app.auth.deps import get_current_user
 from app.db import get_db
 from app.models import Contact, User
 from app.schemas import AddContactRequest, ContactOut
-from app.services.conversations import get_or_create_direct_conversation
+from app.services.conversations import (
+    get_or_create_direct_conversation,
+    get_or_create_direct_conversations,
+)
 from app.ws.manager import manager
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
@@ -26,22 +29,23 @@ async def list_contacts(
         .where(Contact.user_id == current_user.id)
         .order_by(User.display_name)
     )
-    others = result.scalars().all()
+    others = list(result.scalars().all())
 
-    out: list[ContactOut] = []
-    for other in others:
-        # 一併帶上對話 id，前端點好友即可直接進對話（不存在就建立）。
-        conv = await get_or_create_direct_conversation(db, current_user.id, other.id)
-        out.append(
-            ContactOut(
-                user_id=other.id,
-                email=other.email,
-                display_name=other.display_name,
-                conversation_id=conv.id,
-                online=manager.is_online(other.id),
-                last_seen_at=manager.get_last_seen(other.id),
-            )
+    # 一併帶上對話 id（前端點好友即可直接進對話）；一次批次取/補建,避免逐位 N+1。
+    convs = await get_or_create_direct_conversations(
+        db, current_user.id, [o.id for o in others]
+    )
+    out = [
+        ContactOut(
+            user_id=o.id,
+            email=o.email,
+            display_name=o.display_name,
+            conversation_id=convs[o.id].id,
+            online=manager.is_online(o.id),
+            last_seen_at=manager.get_last_seen(o.id),
         )
+        for o in others
+    ]
     await db.commit()
     return out
 

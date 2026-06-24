@@ -23,6 +23,8 @@ class Attachment(Base):
     __table_args__ = (UniqueConstraint("message_id", name="uq_attachment_message"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    # message_id 已由 __table_args__ 的 UniqueConstraint(uq_attachment_message)建唯一索引,
+    # 依訊息查附件(WHERE message_id=)已可用該索引,毋須再加普通索引。
     message_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("messages.id", ondelete="CASCADE"), nullable=True
     )

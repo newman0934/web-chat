@@ -27,7 +27,7 @@ async def list_notifications(
     db: AsyncSession = Depends(get_db),
 ):
     notifs = await svc.list_notifications(db, current_user.id, before=coerce_cursor(db, before), limit=limit)
-    items = [await svc.serialize_notification(db, n) for n in notifs]
+    items = await svc.serialize_notifications(db, notifs)
     unread = await svc.unread_count(db, current_user.id)
     return {"items": items, "unread_count": unread}
 
